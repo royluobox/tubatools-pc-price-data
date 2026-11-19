@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "capturedAt": "2026-11-19T07:03:44Z",
+ "capturedAt": "2026-11-19T07:05:25Z",
  "source": "VRAMGlass",
  "sourceUrl": "https://vramglass.com/",
  "market": "xianyu",
- "attribution": "数据来源：VRAMGlass（vramglass.com）闲鱼市场在售挂单统计，快照时间 2026-11-19 07:03。数据仅供个人参考，不构成交易建议；VRAMGlass 与图吧工具箱无隶属关系。",
+ "attribution": "数据来源：VRAMGlass（vramglass.com）闲鱼市场在售挂单统计，快照时间 2026-11-19 07:05。数据仅供个人参考，不构成交易建议；VRAMGlass 与图吧工具箱无隶属关系。",
  "models": [
   {
    "vramglassId": "rtx-5090",
