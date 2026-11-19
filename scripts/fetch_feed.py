@@ -2,6 +2,7 @@
 """抓取 VRAMGlass 闲鱼显卡行情，生成插件可读取的公开快照。
 
 只读取公开 API，不保存 API Key。数据来源会在 latest.json 与页面中署名。
+历史数据每天最多抓取一次；抓取失败或额度不足时沿用上一份快照，避免把已有历史清空。
 """
 
 from __future__ import annotations
@@ -13,12 +14,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 API = "https://api.vramglass.com/v1"
 MARKET = "xianyu"
 HISTORY_DAYS = 365
+HISTORY_TTL_HOURS = 20
 SLEEP_SECONDS = 3.5
 
 # vramglass id, 插件内的型号键, 展示名
@@ -75,7 +77,23 @@ def get_int(obj: dict, *names: str) -> int:
     return 0
 
 
-def fetch_current() -> tuple[dict, dict]:
+def parse_time(text: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def load_previous() -> dict:
+    try:
+        if OUTPUT.exists():
+            return json.loads(OUTPUT.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"读取上一份快照失败：{exc}", file=sys.stderr)
+    return {}
+
+
+def fetch_current() -> dict[str, dict]:
     ids = ",".join(model[0] for model in MODELS)
     query = urllib.parse.urlencode({"ids": ids, "market": MARKET, "lang": "zh"})
     payload = request_json(f"/prices?{query}")
@@ -101,14 +119,12 @@ def fetch_current() -> tuple[dict, dict]:
                 "publishedAt": quote.get("published_at") or "",
             }
             break
-    return quotes, payload
+    return quotes
 
 
 def fetch_history(model_id: str) -> list[dict]:
     query = urllib.parse.urlencode({"market": MARKET, "days": HISTORY_DAYS, "lang": "zh"})
-    payload = request_json(
-        f"/prices/{urllib.parse.quote(model_id)}/history?{query}"
-    )
+    payload = request_json(f"/prices/{urllib.parse.quote(model_id)}/history?{query}")
     points: list[dict] = []
     for point in payload.get("points") or []:
         date = point.get("date")
@@ -121,53 +137,92 @@ def fetch_history(model_id: str) -> list[dict]:
 
 
 def main() -> int:
-    captured = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    previous = load_previous()
+    prev_models = {
+        model.get("vramglassId"): model
+        for model in previous.get("models") or []
+        if isinstance(model, dict) and model.get("vramglassId")
+    }
+    prev_history_at = parse_time(previous.get("historyCapturedAt", ""))
+    history_fresh = (
+        prev_history_at is not None
+        and now - prev_history_at < timedelta(hours=HISTORY_TTL_HOURS)
+    )
+
     try:
-        quotes, _ = fetch_current()
+        quotes = fetch_current()
+        current_ok = len(quotes) > 0
         print(f"现价：{len(quotes)} 个型号")
     except Exception as exc:  # noqa: BLE001
-        print(f"现价抓取失败，继续尝试历史：{exc}", file=sys.stderr)
+        print(f"现价抓取失败，沿用上一份快照：{exc}", file=sys.stderr)
         quotes = {}
+        current_ok = False
 
     models = []
+    history_all_ok = True
     for model_id, model_key, name in MODELS:
+        prev = prev_models.get(model_id, {})
         history: list[dict] = []
-        try:
-            history = fetch_history(model_id)
-        except urllib.error.HTTPError as exc:
-            print(f"{model_id} 历史抓取失败：HTTP {exc.code}", file=sys.stderr)
-        except Exception as exc:  # noqa: BLE001
-            print(f"{model_id} 历史抓取失败：{exc}", file=sys.stderr)
-        time.sleep(SLEEP_SECONDS)
+
+        if history_fresh:
+            history = prev.get("history") or []
+            print(f"{model_id}: 沿用 {len(history)} 天历史")
+        else:
+            try:
+                history = fetch_history(model_id)
+                print(f"{model_id}: 历史 {len(history)} 天")
+            except urllib.error.HTTPError as exc:
+                print(f"{model_id} 历史抓取失败：HTTP {exc.code}", file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001
+                print(f"{model_id} 历史抓取失败：{exc}", file=sys.stderr)
+            time.sleep(SLEEP_SECONDS)
+
+        if not history:
+            history = prev.get("history") or []
+        if not history and not history_fresh:
+            history_all_ok = False
 
         quote = quotes.get(model_id)
-        if not quote and not history:
+        price = (
+            quote["price"]
+            if quote
+            else get_int(prev, "price") or (history[-1]["median"] if history else 0)
+        )
+        if price <= 0:
             print(f"{model_id} 无数据，跳过")
             continue
 
-        price = quote["price"] if quote else history[-1]["median"]
         models.append(
             {
                 "vramglassId": model_id,
                 "modelKey": model_key,
                 "name": name,
                 "price": price,
-                "low": quote["low"] if quote else price,
-                "high": quote["high"] if quote else price,
-                "listingCount": quote["listingCount"] if quote else 0,
-                "publishedAt": quote["publishedAt"] if quote else "",
+                "low": quote["low"] if quote else get_int(prev, "low") or price,
+                "high": quote["high"] if quote else get_int(prev, "high") or price,
+                "listingCount": quote["listingCount"] if quote else get_int(prev, "listingCount"),
+                "publishedAt": quote["publishedAt"] if quote else prev.get("publishedAt", ""),
                 "historyDays": HISTORY_DAYS,
                 "history": history,
             }
         )
-        print(f"{model_id}: ¥{price:,}，历史 {len(history)} 天")
 
     if not models:
         raise SystemExit("没有拿到任何数据，保留上一次快照")
 
+    captured = now if current_ok else (parse_time(previous.get("capturedAt", "")) or now)
+    history_fetched_ok = (
+        not history_fresh
+        and history_all_ok
+        and any(model["history"] for model in models)
+    )
+    history_captured = now if history_fetched_ok else (prev_history_at or now)
+
     feed = {
         "schema": 1,
         "capturedAt": captured.isoformat().replace("+00:00", "Z"),
+        "historyCapturedAt": history_captured.isoformat().replace("+00:00", "Z"),
         "source": "VRAMGlass",
         "sourceUrl": "https://vramglass.com/",
         "market": MARKET,
