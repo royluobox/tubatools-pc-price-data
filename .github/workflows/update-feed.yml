@@ -42,7 +42,7 @@ jobs:
         continue-on-error: true
         env:
           ZOL_PAGES: "4"
-          TREND_MODELS: "20"
+          TREND_MODELS: "80"
         run: dotnet run --project scripts/zol-feed -c Release
 
       - name: Commit snapshot
