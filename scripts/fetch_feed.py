@@ -80,6 +80,12 @@ def fetch_current() -> tuple[dict, dict]:
     ids = ",".join(model[0] for model in MODELS)
     query = urllib.parse.urlencode({"ids": ids, "market": MARKET, "lang": "zh"})
     payload = request_json(f"/prices?{query}")
+    if payload.get("items"):
+        first = payload["items"][0]
+        print("first item keys:", sorted(first.keys()))
+        quotes = first.get("quotes") or []
+        if quotes:
+            print("first quote:", json.dumps(quotes[0], ensure_ascii=False)[:800])
     quotes: dict[str, dict] = {}
     for item in payload.get("items") or []:
         model_id = item.get("id")
