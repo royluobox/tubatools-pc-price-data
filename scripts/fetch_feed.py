@@ -47,8 +47,12 @@ def request_json(path: str) -> dict:
         API + path,
         headers={
             "Authorization": "Bearer " + key,
-            "Accept": "application/json",
-            "User-Agent": "TubatoolsPcPriceTrendFeed/1.0 (+https://github.com/royluobox/tubatools-pc-price-data)",
+            # 与插件客户端保持一致的浏览器 UA，避免部分网关把脚本 UA 当成异常流量。
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "zh-CN,zh;q=0.9",
         },
     )
     with urllib.request.urlopen(req, timeout=40) as resp:
@@ -119,8 +123,12 @@ def fetch_history(model_id: str) -> list[dict]:
 
 def main() -> int:
     captured = datetime.now(timezone.utc).replace(microsecond=0)
-    quotes, _ = fetch_current()
-    print(f"现价：{len(quotes)} 个型号")
+    try:
+        quotes, _ = fetch_current()
+        print(f"现价：{len(quotes)} 个型号")
+    except Exception as exc:  # noqa: BLE001
+        print(f"现价抓取失败，继续尝试历史：{exc}", file=sys.stderr)
+        quotes = {}
 
     models = []
     for model_id, model_key, name in MODELS:
@@ -154,6 +162,9 @@ def main() -> int:
             }
         )
         print(f"{model_id}: ¥{price:,}，历史 {len(history)} 天")
+
+    if not models:
+        raise SystemExit("没有拿到任何数据，保留上一次快照")
 
     feed = {
         "schema": 1,
