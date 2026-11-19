@@ -28,15 +28,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Probe API reachability
-        continue-on-error: true
-        env:
-          VRAMGLASS_KEY: ${{ secrets.VRAMGLASS_KEY }}
-        run: |
-          echo "no-auth: $(curl -s -o /dev/null -w '%{http_code}' 'https://api.vramglass.com/v1/prices?ids=rtx-5090&market=xianyu&lang=zh')"
-          echo "root: $(curl -s -o /dev/null -w '%{http_code}' 'https://api.vramglass.com/')"
-          echo "auth: $(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $VRAMGLASS_KEY" 'https://api.vramglass.com/v1/prices?ids=rtx-5090&market=xianyu&lang=zh')"
-
       - name: Fetch VRAMGlass feed
         env:
           VRAMGLASS_KEY: ${{ secrets.VRAMGLASS_KEY }}
