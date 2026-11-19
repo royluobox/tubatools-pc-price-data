@@ -92,8 +92,10 @@ foreach (var group in models.GroupBy(m => m.Slug))
         .Take(trendModels)
         .ToList();
 
+    var rank = 0;
     foreach (var model in top)
     {
+        rank++;
         var skus = model.Products
             .Where(p => CollectSamplePrices(p).Any(price =>
                 price >= model.Price * 0.7 && price <= model.Price * 1.3))
@@ -104,7 +106,9 @@ foreach (var group in models.GroupBy(m => m.Slug))
             continue;
         }
 
-        var picks = skus.Count <= 2 ? skus : PickRepresentativeSkus(skus, 2);
+        // 前 20 个型号多取一个 SKU，其余取一个，尽量扩大历史覆盖率。
+        var pickCount = rank <= 20 ? 2 : 1;
+        var picks = skus.Count <= pickCount ? skus : PickRepresentativeSkus(skus, pickCount);
         var daily = new SortedDictionary<DateOnly, List<int>>();
         var popularity = 0;
         foreach (var sku in picks)
