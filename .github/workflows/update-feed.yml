@@ -18,6 +18,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -28,16 +29,30 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
       - name: Fetch VRAMGlass feed
         env:
           VRAMGLASS_KEY: ${{ secrets.VRAMGLASS_KEY }}
         run: python scripts/fetch_feed.py
+
+      - name: Generate ZOL catalog
+        continue-on-error: true
+        env:
+          ZOL_PAGES: "4"
+          TREND_MODELS: "20"
+        run: dotnet run --project scripts/zol-feed -c Release
 
       - name: Commit snapshot
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/data/latest.json
+          if [ -f site/data/catalog.json ]; then
+            git add site/data/catalog.json
+          fi
           if git diff --cached --quiet; then
             echo "数据无变化"
           else
