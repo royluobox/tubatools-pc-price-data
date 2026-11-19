@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>图吧工具箱 · 显卡价格快照</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0 auto;
+      max-width: 760px;
+      padding: 48px 20px 80px;
+      font: 15px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      color: #1b1b1b;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #171717; }
+      code { background: #262626; }
+      .card { background: #1f1f1f; border-color: #333; }
+    }
+    h1 { font-size: 24px; margin: 0 0 8px; }
+    p { margin: 8px 0; }
+    .muted { color: #777; font-size: 13px; }
+    .card {
+      margin: 20px 0;
+      padding: 16px 18px;
+      background: #fff;
+      border: 1px solid #e3e3e3;
+      border-radius: 10px;
+    }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+    a { color: #0b6bcb; }
+  </style>
+</head>
+<body>
+  <h1>显卡价格快照</h1>
+  <p class="muted">图吧工具箱「电脑配件价格走势」插件的公开数据源。</p>
+
+  <div class="card">
+    <p><strong>数据文件：</strong><a href="data/latest.json">data/latest.json</a></p>
+    <p><strong>更新频率：</strong>每 8 小时由 GitHub Actions 自动抓取一次。</p>
+    <p><strong>数据来源：</strong>VRAMGlass（<a href="https://vramglass.com/" rel="noopener">vramglass.com</a>）
+      闲鱼市场在售挂单的中位价、Q1/Q3 区间与挂单数，历史最多 365 天。</p>
+  </div>
+
+  <div class="card">
+    <p><strong>声明</strong></p>
+    <p>本仓库只是 VRAMGlass 公开接口数据的定时快照，用于让插件用户无需自备 API Key 也能查看显卡行情。
+      数据版权归 VRAMGlass 所有；数据仅供参考，不构成交易建议。VRAMGlass 与图吧工具箱无隶属关系。</p>
+    <p>如数据提供方希望停止镜像，请在本仓库提交 Issue，我们会立即下线相关数据。</p>
+  </div>
+
+  <p class="muted">插件包内还附带一份打包时的数据快照（seed），离线时也能看到最近一次行情。</p>
+</body>
+</html>
