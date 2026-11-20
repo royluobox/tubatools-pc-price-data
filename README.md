@@ -12,7 +12,7 @@
 
 - GitHub Actions 每 8 小时检查 VRAMGlass 和 ZOL，原有免费额度和工作流保持。
 - 在有第三方蚂蚁星球 API Key，**且确认可公开再分发**后，查询首批 4 个严格型号、2 个平台，生成 [market.json](https://royluobox.github.io/tubatools-pc-price-data/data/market.json)。后续可在验证免费配额后扩大至 12 个或更多。
-- 新增 **Smoke test HaoJingKe API (no publication)** 手动测试工作流：最多 2 次京东查询，不写入真实快照。此工作流与 VRAMGlass 用量无关。
+- 新增 **Smoke test HaoJingKe API (no publication)** 手动测试工作流：各查 1 次京东、拼多多的 RTX 5070，不写入真实快照。此工作流与 VRAMGlass 用量无关。
 - **无凭据时安全跳过**新来源，不生成虚假报价、不覆盖旧 market.json。源不可用时保留上次成功结果，由插件将过期资料单独标记。
 - 每个型号仅接受严格型号匹配、排除配件和错误显存版本的真实 SKU；最多保存 12 条，保留时间、类型及官方商品链接。
 - 不推演成交价、优惠券或历史缺失日期，也不把 ZOL、闲鱼、淘宝报价计算成同一个中位价。
@@ -56,6 +56,8 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall -q scripts tests
 ```
 
-CI 只运行离线报价契约测试与 ZOL 编译，**不会花费 API 额度**。主分支定时流程才读取 Secrets 并采集；测试价不进入生产文件。公开快照不包含 API Key、签名或用户数据。
+通常的 CI 只运行离线报价契约测试与 ZOL 编译，**不会花费 API 额度**；专门标记的测试提交或手动运行冒烟工作流除外。测试价不进入生产文件。公开快照不包含 API Key、签名或用户数据。
+
+2026-11-20 首次真实联机测试：Secret 已能从 Actions 读取，拼多多曾返回 HTTP/JSON 成功及 5 条商品行，但 RTX 5070 **0 条通过精确 SKU 校验**；京东接口返回 `status_code=1`（原因待核实）。随后复测出现连接超时。**目前不能证明其可稳定提供所需硬件价格，市场快照发布继续关闭。** 详见 [接口验证记录](docs/api-onboarding.md)。
 
 本仓库与 VRAMGlass、ZOL、蚂蚁星球、淘宝、京东、拼多多无隶属关系。平台报价受地区、库存、会员、优惠券、运费和商品版本等影响，仅供研究参考。如来源要求停止展示，请提交 Issue。
