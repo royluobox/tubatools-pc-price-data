@@ -122,7 +122,13 @@ def main() -> int:
                 observations.setdefault(target["modelKey"], []).extend(offers)
                 success += 1
                 matched += len(offers)
-                print(f"{target['modelKey']}/{source}: {len(offers)} strictly matched offers")
+                rows_count = "unknown"
+                if source in {"jd", "pdd"} and isinstance(response.get("data"), dict):
+                    rows = response["data"].get("data" if source == "jd" else "goods_list")
+                    if isinstance(rows, list):
+                        rows_count = str(len(rows))
+                print(f"{target['modelKey']}/{source}: {rows_count} returned rows, "
+                      f"{len(offers)} strictly matched offers")
             except Exception as exc:
                 # Never log request URL, query text, credentials or response bodies.
                 detail = type(exc).__name__
