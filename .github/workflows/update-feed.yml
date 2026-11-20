@@ -62,6 +62,11 @@ jobs:
           TBK_MAX_TARGETS: "12"
         run: python scripts/fetch_market.py
 
+      - name: Sync attributed Frocloud monthly reference archive (no API key)
+        # Only publicly licensed CSVs; original month and price are retained.
+        # A failed source fetch leaves the previous snapshot untouched.
+        run: python scripts/fetch_frocloud.py
+
       - name: Validate all snapshots before publication
         run: python scripts/validate_snapshot.py
 
@@ -75,6 +80,9 @@ jobs:
           fi
           if [ -f site/data/market.json ]; then
             git add site/data/market.json
+          fi
+          if [ -f site/data/frocloud-monthly.json ]; then
+            git add site/data/frocloud-monthly.json
           fi
           if git diff --cached --quiet; then
             echo "数据无变化"
