@@ -1,4 +1,4 @@
-name: Smoke test HaoJingKe JD schema (no publication)
+name: Smoke test HaoJingKe JD coverage (no publication)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Inspect one JD response schema, no values or publication
+      - name: Probe four JD GPU CPU RAM and official SKU lookups without storing results
         env:
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
         run: |
@@ -30,38 +30,64 @@ jobs:
           PYTHONPATH=scripts python - <<'PY'
           import json
           import os
-          from haojingke import query_haojingke
+          import time
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
 
-          def schema(value, depth=0):
-              if depth > 4:
-                  return "max-depth"
-              if isinstance(value, dict):
-                  result = {}
-                  for name, child in list(value.items())[:30]:
-                      if not isinstance(name, str) or len(name) > 50:
-                          continue
-                      if any(token in name.lower() for token in
-                             ("token", "secret", "password", "cookie", "apikey", "mobile")):
-                          continue
-                      result[name] = schema(child, depth + 1)
-                  return result
-              if isinstance(value, list):
-                  return {"type": "list", "length": len(value),
-                          "first_schema": schema(value[0], depth + 1) if value else None}
-              if isinstance(value, str):
-                  try:
-                      decoded = json.loads(value)
-                  except (ValueError, TypeError):
-                      return {"type": "str", "length": len(value), "json": False}
-                  return {"type": "json-string", "length": len(value),
-                          "decoded_schema": schema(decoded, depth + 1)}
-              return type(value).__name__
+          from haojingke import DOCUMENTED_ENDPOINTS
+          from marketplace import title_matches
 
-          try:
-              payload = query_haojingke("jd", {"query": "RTX 5070"}, os.environ["HJK_API_KEY"])
-              print("JD RESPONSE SHAPE ONLY:", json.dumps(schema(payload), ensure_ascii=False))
-              print("JD reported total:", payload.get("data", {}).get("total") if isinstance(payload.get("data"), dict) else "unknown")
-          except Exception as error:
-              print("JD probe failure type:", type(error).__name__)
-              raise SystemExit(1)
+          targets = {x["modelKey"]: x for x in
+                     json.loads(Path("config/market-targets.json").read_text("utf-8"))}
+          selected_skus = {"100147630258", "10154190683550"}
+          cases = [
+              ("GPU keyword", {"keyword": "RTX5070"}, "vga|RTX5070"),
+              ("CPU keyword", {"keyword": "9800X3D"}, "cpu|RYZEN79800X3D"),
+              ("RAM keyword", {"keyword": "DDR5"}, None),
+              ("Known JD SKUs", {"goods_ids": ",".join(sorted(selected_skus))}, None),
+          ]
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise ValueError("redirect refused")
+
+          opener = urllib.request.build_opener(NoRedirect())
+          for label, parameters, model_key in cases:
+              form = {"apikey": os.environ["HJK_API_KEY"],
+                      "pageindex": "1", "pagesize": "20", "iscoupon": "0"}
+              form.update(parameters)
+              request = urllib.request.Request(
+                  DOCUMENTED_ENDPOINTS["jd"],
+                  data=urllib.parse.urlencode(form).encode("utf-8"),
+                  method="POST",
+                  headers={"Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+                           "User-Agent": "TubatoolsPriceFeed/4.0"})
+              try:
+                  with opener.open(request, timeout=25) as response:
+                      if response.geturl() != DOCUMENTED_ENDPOINTS["jd"]:
+                          raise ValueError("unexpected URL")
+                      raw = response.read(2_000_001)
+                  if len(raw) > 2_000_000:
+                      raise ValueError("oversized response")
+                  payload = json.loads(raw)
+                  if not isinstance(payload, dict):
+                      raise ValueError("not a JSON object")
+                  info = payload.get("data")
+                  rows = info.get("data") if isinstance(info, dict) else None
+                  total = info.get("total") if isinstance(info, dict) else None
+                  status = payload.get("status_code")
+                  allowed_status = status if isinstance(status, int) and 0 <= status <= 999 else "other"
+                  allowed_total = total if isinstance(total, int) and 0 <= total <= 1000000 else "unknown"
+                  count = len(rows) if isinstance(rows, list) else (0 if rows == "" and allowed_total == 0 else "not-list")
+                  matching = sum(isinstance(x, dict) and title_matches(x.get("goods_name", ""), targets[model_key])
+                                 for x in rows) if isinstance(rows, list) and model_key else "n/a"
+                  found_ids = sum(str(x.get("goods_id")) in selected_skus for x in rows
+                                  if isinstance(x, dict)) if isinstance(rows, list) else 0
+                  print(f"{label}: status={allowed_status}, total={allowed_total}, rows={count}, "
+                        f"exact_titles={matching}, known_skus={found_ids}")
+              except Exception as error:
+                  print(f"{label}: transport/schema error type={type(error).__name__}")
+              time.sleep(2)
+          print("No price values, API credentials, or snapshots were logged or published.")
           PY
