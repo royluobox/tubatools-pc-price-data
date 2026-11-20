@@ -12,7 +12,7 @@
 
 - GitHub Actions 每 8 小时检查 VRAMGlass 和 ZOL，原有免费额度和工作流保持。
 - 在有第三方蚂蚁星球 API Key，**且确认可公开再分发**后，查询首批 4 个严格型号、2 个平台，生成 [market.json](https://royluobox.github.io/tubatools-pc-price-data/data/market.json)。后续可在验证免费配额后扩大至 12 个或更多。
-- 新增 **Smoke test HaoJingKe API (no publication)** 手动测试工作流：各查 1 次京东、拼多多的 RTX 5070，不写入真实快照。此工作流与 VRAMGlass 用量无关。
+- 新增 **Smoke test HaoJingKe API (no publication)** 手动测试工作流：任选已审阅的 CPU/显卡型号，最多分别请求京东、拼多多各一次；没有自动触发，不写入真实快照，也不消耗 VRAMGlass 额度。
 - **无凭据时安全跳过**新来源，不生成虚假报价、不覆盖旧 market.json。源不可用时保留上次成功结果，由插件将过期资料单独标记。
 - 每个型号仅接受严格型号匹配、排除配件和错误显存版本的真实 SKU；最多保存 12 条，保留时间、类型及官方商品链接。
 - 不推演成交价、优惠券或历史缺失日期，也不把 ZOL、闲鱼、淘宝报价计算成同一个中位价。
