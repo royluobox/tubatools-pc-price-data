@@ -65,8 +65,13 @@ jobs:
                   payload = json.loads(raw)
                   if not isinstance(payload, dict):
                       raise ValueError("not a JSON object")
-                  status = payload.get("status_code")
-                  status = status if isinstance(status, int) and 0 <= status <= 999 else "other"
+                  original_status = payload.get("status_code")
+                  candidate = str(original_status).strip()
+                  status = candidate if candidate.isascii() and candidate.isdigit() and len(candidate) <= 3 else "other"
+                  present_fields = sorted(k for k in ("status_code", "status", "code", "data", "message", "msg", "error_code") if k in payload)
+                  data_shape = type(payload.get("data")).__name__
+                  print(f"{label} envelope: status={status}, status_type={type(original_status).__name__}, "
+                        f"fields={','.join(present_fields)}, data_type={data_shape}")
                   details = payload.get("data")
                   if isinstance(details, list):
                       details = details[0] if details and isinstance(details[0], dict) else None
