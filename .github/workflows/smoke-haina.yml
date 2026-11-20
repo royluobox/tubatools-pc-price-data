@@ -135,3 +135,13 @@ jobs:
               time.sleep(1)
           print("No API key, raw API payload, product title, retail price or snapshot has been logged or published.")
           PY
+      - uses: actions/checkout@v4
+      - name: Verify source adapter accepts real listings without writing snapshots
+        env:
+          HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
+          MARKET_SMOKE_TEST: "true"
+          MARKET_PROVIDER: "haina"
+          MARKET_SMOKE_MODEL_KEY: "vga|RTX5070"
+          HAINA_MAX_TARGETS: "1"
+          MARKET_PAUSE_SECONDS: "1"
+        run: python scripts/fetch_market.py
