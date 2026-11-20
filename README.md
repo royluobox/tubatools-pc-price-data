@@ -7,6 +7,19 @@
 | [latest.json](https://royluobox.github.io/tubatools-pc-price-data/data/latest.json) | 9 款显卡的闲鱼挂牌统计和历史 | VRAMGlass 免费 API | 否，挂单 ≠ 成交 |
 | [catalog.json](https://royluobox.github.io/tubatools-pc-price-data/data/catalog.json) | 12 类电脑配件、约 1,700 个型号的参考价 | ZOL 产品/趋势页 | 否，参考价 ≠ 到手价 |
 | market.json（配置与许可后生成） | 带平台、SKU、价格类型、商品页、时间的参考标价 | 什么值得买海纳 API（优先），蚂蚁星球与淘宝联盟备用 | 第三方 API 原价参考，绝非结算价 |
+| [frocloud-monthly.json](site/data/frocloud-monthly.json) | CPU、GPU 月度历史价格，另含内存/硬盘每 GB 价格 | [x1shang / frocloud-DIYPCmarket](https://github.com/x1shang/frocloud-DIYPCmarket)，CC BY 4.0 | **否**：作者人工调查的各店最低参考价，不含平台、SKU、具体购买日期 |
+
+### Frocloud 月度历史档案（免费、无需密钥）
+
+对公开 CSV 只做定时同步、字段校验和结构转换；每 8 小时**检查上游是否更新**，并不意味着每 8 小时产生新的价格。上游按人工月度维护，当前公开数据截至 **2026-10**。这个数据源不是京东实时行情或逐 SKU 历史订单价，绝不和 VRAMGlass 闲鱼挂单、ZOL 标价、电商 API 合并成同一价格序列。
+
+- 公开原始月份 `YYYY-MM` 与原始价格精度；没有具体采样日，不给月份补造某一天。
+- 2026-07 特殊 `下旬` 快照放在单独的 `specialSnapshots`，不冒充标准月度价格点。
+- CPU/显卡的 `priceCny` 是**元/件**，内存/SSD/HDD 的 `priceCny` 是**元/GB**；单位不兼容，不混算。
+- 来源作者 [x1shang](https://github.com/x1shang/frocloud-DIYPCmarket)、许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)；转换文件内保留署名、许可、来源与源 CSV SHA-256。对原数据进行了结构和型号键转换，未改写源仓库和原始 Excel。
+- 上游 [README](https://github.com/x1shang/frocloud-DIYPCmarket#%EF%B8%8F-%E8%AF%BB%E8%80%85%E9%A1%BB%E7%9F%A5) 明确说明渠道为空、人工整理且可能有错误；因此在插件内应明确标注“社区月度参考”，不能作为准确到手价使用。
+
+运行：`python scripts/fetch_frocloud.py`；离线验证：`python -m unittest discover -s tests -v`。同步失败时保留最后一份真实快照，**不产生补点或虚构现价**。
 
 ## 自动更新
 
