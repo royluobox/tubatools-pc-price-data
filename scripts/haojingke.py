@@ -1,6 +1,6 @@
 """Documented third-party HaoJingKe product search; no platform scraping.
 
-The provider labels ``wlPrice`` (JD) and ``price`` (PDD) as original prices.
+Both third-party endpoints label ``price`` as the original listed price.
 They are reference listing values, NOT checkout prices. Coupon prices are
 retained only as conditional metadata and never silently replace the original.
 """
@@ -32,8 +32,12 @@ def query_haojingke(provider: str, target: dict, api_key: str) -> dict:
         raise ValueError("Unsupported HaoJingKe platform")
     if not api_key or len(api_key) > 512:
         raise ValueError("Missing or malformed API key")
-    params = {"apikey": api_key, "keyword": target["query"],
-              "page": "1", "page_size": "20"}
+    params = {"apikey": api_key, "keyword": target["query"]}
+    if provider == "jd":
+        # These are HaoJingKe's names, not the official JD Alliance names.
+        params.update({"pageindex": "1", "pagesize": "20", "iscoupon": "0"})
+    else:
+        params.update({"page": "1", "page_size": "20"})
     request = urllib.request.Request(
         DOCUMENTED_ENDPOINTS[provider],
         data=urllib.parse.urlencode(params).encode("utf-8"),
@@ -62,7 +66,12 @@ def _verified_product_url(platform: str, sku: str, raw: object) -> str | None:
     """Match IDs inside official product links before publishing them."""
     if not sku.isdigit():
         return None
-    url = official_link(platform, str(raw or ""))
+    original = str(raw or "").strip()
+    # HaoJingKe's published JD example omits the scheme on item.jd.com.
+    # Only this exact official product-link pattern may be upgraded.
+    if platform == "京东" and re.fullmatch(r"item\.jd\.com/\d+\.html", original):
+        original = "https://" + original
+    url = official_link(platform, original)
     if not url:
         return None
     parsed = urllib.parse.urlparse(url)
@@ -91,7 +100,9 @@ def parse_haojingke_response(payload: dict, target: dict, observed_at: datetime,
     if str(payload.get("status_code")) != "200":
         raise ValueError("HaoJingKe API returned unsuccessful status")
     data = payload.get("data")
-    rows = data.get("goods_list") if isinstance(data, dict) else data
+    if not isinstance(data, dict):
+        raise ValueError("HaoJingKe response data must be an object")
+    rows = data.get("data" if provider == "jd" else "goods_list")
     if not isinstance(rows, list):
         raise ValueError("HaoJingKe product list missing")
 
@@ -100,15 +111,15 @@ def parse_haojingke_response(payload: dict, target: dict, observed_at: datetime,
     for row in rows[:100]:
         if not isinstance(row, dict):
             continue
-        sku = str(row.get("skuId") if provider == "jd" else row.get("goods_id") or "")
-        title = row.get("skuName") if provider == "jd" else row.get("goods_name")
+        sku = str(row.get("goods_id") or "")
+        title = row.get("goods_name")
         if not isinstance(title, str) or not title_matches(title, target):
             continue
         url = _verified_product_url(
             platform, sku,
-            row.get("materiaUrl") if provider == "jd" else row.get("materiaurl"),
+            row.get("materiaurl"),
         )
-        cents = cny_cents(row.get("wlPrice") if provider == "jd" else row.get("price"))
+        cents = cny_cents(row.get("price"))
         if not cents or not url:
             continue
         offer = {
@@ -122,9 +133,7 @@ def parse_haojingke_response(payload: dict, target: dict, observed_at: datetime,
             "priceType": "original-reference",
             "observedAt": _iso(observed_at),
         }
-        coupon = cny_cents(
-            row.get("wlPrice_after") if provider == "jd" else row.get("price_after")
-        )
+        coupon = cny_cents(row.get("price_after"))
         # This is NOT a confirmed payable price; retain only sensible metadata.
         if coupon and coupon <= cents:
             offer["conditionalCouponPriceCents"] = coupon
