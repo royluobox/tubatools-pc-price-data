@@ -1,4 +1,4 @@
-name: Smoke test HaoJingKe JD pool (no publication)
+name: Smoke test HaoJingKe JD fallback (no publication)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Distinguish empty affiliate pool from missing hardware coverage
+      - name: Check documented legacy union fallback without publishing prices
         env:
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
         run: |
@@ -36,18 +36,20 @@ jobs:
           from pathlib import Path
 
           from urllib.error import HTTPError
-          endpoints = {
-              "list": "https://api-gw.haojingke.com/index.php/v1/api/jd/goodslist",
-              "detail": "https://api-gw.haojingke.com/index.php/v1/api/jd/goodsdetail",
-          }
+
+          legacy = "https://api-gw.haojingke.com/index.php/api/platform/openapi"
+          detail_url = "https://api-gw.haojingke.com/index.php/v1/api/jd/goodsdetail"
           cases = [
-              ("No filter, default coupon", "list", {"pageindex": "1", "pagesize": "10"}),
-              ("No filter, coupon off", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0"}),
-              ("Common phone keyword", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0", "keyword": "手机"}),
-              ("Broad AMD keyword", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0", "keyword": "AMD"}),
-              ("Short GPU keyword", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0", "keyword": "5070"}),
-              ("Known CPU detail", "detail", {"goods_id": "100147630258"}),
-              ("Official-doc sample detail", "detail", {"goods_id": "66982790389"}),
+              ("Legacy fallback GPU", legacy, {
+                  "type": "goodslist", "page": "1", "pagesize": "10",
+                  "source_type": "1", "iscoupon": "0", "istotal": "1",
+                  "keyword": "RTX 5070"}),
+              ("Legacy fallback phone", legacy, {
+                  "type": "goodslist", "page": "1", "pagesize": "10",
+                  "source_type": "1", "iscoupon": "0", "istotal": "1",
+                  "keyword": "手机"}),
+              ("Current direct SKU status", detail_url, {
+                  "goods_id": "100147630258"}),
           ]
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -55,26 +57,31 @@ jobs:
                   raise ValueError("redirect refused")
 
           def safe_code(value):
+              if isinstance(value, int) and -99999999 <= value <= 99999999:
+                  return str(value)
               code = str(value).strip()
-              return code if code.isascii() and code.isdigit() and len(code) <= 8 else "n/a"
+              if len(code) <= 9 and code.lstrip("-").isascii() and code.lstrip("-").isdigit():
+                  return code
+              return "other"
 
           def safe_reason(payload):
               message = str(payload.get("message") or payload.get("msg") or "")[:600]
               categories = {
-                  "authorization": ("未授权", "授权", "权限", "登录", "认证", "签约"),
+                  "permission": ("未授权", "授权", "权限", "登录", "认证", "签约", "无权", "开通"),
                   "account": ("账号", "账户", "京盟", "联盟", "appkey", "appsecret", "appid"),
-                  "missing_product": ("商品不存在", "商品未找到", "没有找到", "无此商品", "不存在"),
-                  "rate_limit": ("限流", "频繁", "次数", "超限", "quota", "rate limit"),
+                  "missing_product": ("商品不存在", "商品未找到", "没有找到", "无此商品",
+                                      "不存在", "未收录", "无此", "未查到", "无数据", "空"),
+                  "unsupported": ("不支持", "暂不", "下线", "已关闭", "接口不存在"),
+                  "rate_limit": ("限流", "频繁", "次数", "超限", "quota"),
                   "parameter": ("参数", "缺少", "格式错误"),
                   "service": ("系统", "服务器", "稍后", "异常", "失败"),
               }
-              labels = [category for category, patterns in categories.items()
-                        if any(pattern.lower() in message.lower() for pattern in patterns)]
-              return "+".join(labels) if labels else ("present-unclassified" if message else "no-message")
+              labels = [name for name, patterns in categories.items()
+                        if any(word.lower() in message.lower() for word in patterns)]
+              return "+".join(labels) if labels else ("unclassified" if message else "no-message")
 
           opener = urllib.request.build_opener(NoRedirect())
-          for label, endpoint_type, params in cases:
-              endpoint = endpoints[endpoint_type]
+          for label, endpoint, params in cases:
               form = {"apikey": os.environ["HJK_API_KEY"]}
               form.update(params)
               request = urllib.request.Request(
@@ -93,26 +100,20 @@ jobs:
                   payload = json.loads(raw)
                   if not isinstance(payload, dict):
                       raise ValueError("not JSON object")
-                  status = safe_code(payload.get("status_code"))
-                  reason = safe_reason(payload)
                   data = payload.get("data")
-                  if endpoint_type == "list":
-                      rows = data.get("data") if isinstance(data, dict) else None
-                      total = data.get("total") if isinstance(data, dict) else None
-                      row_count = len(rows) if isinstance(rows, list) else (
-                          0 if rows in ("", [], None) else "non-list")
-                      safe_total = total if isinstance(total, int) and 0 <= total <= 1000000 else "unknown"
-                      print(f"{label}: status={status}, total={safe_total}, rows={row_count}, "
-                            f"data_shape={type(data).__name__}, reason={reason}")
-                  else:
-                      details = data if isinstance(data, dict) else None
-                      found = isinstance(details, dict) and bool(details.get("goods_id"))
-                      print(f"{label}: status={status}, detail_found={found}, "
-                            f"data_shape={type(data).__name__}, reason={reason}")
+                  rows = data.get("data") if isinstance(data, dict) else data
+                  row_count = len(rows) if isinstance(rows, list) else (0 if rows in ("", [], None) else "other")
+                  top_total = payload.get("total")
+                  nested_total = data.get("total") if isinstance(data, dict) else None
+                  total = nested_total if isinstance(nested_total, int) else top_total
+                  total = total if isinstance(total, int) and 0 <= total <= 1000000 else "unknown"
+                  print(f"{label}: status={safe_code(payload.get('status_code'))}, "
+                        f"rows={row_count}, total={total}, data_type={type(data).__name__}, "
+                        f"reason={safe_reason(payload)}")
               except HTTPError as error:
                   print(f"{label}: http_status={safe_code(error.code)}")
               except Exception as error:
                   print(f"{label}: transport_or_schema={type(error).__name__}")
               time.sleep(2)
-          print("No prices, identifiers from API payloads, messages, keys, or snapshots were published.")
+          print("No prices, raw messages, credentials or snapshots were published.")
           PY
