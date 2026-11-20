@@ -1,4 +1,4 @@
-name: Smoke test HaoJingKe JD fallback (no publication)
+name: Diagnose JD public price endpoint (no publication)
 
 on:
   workflow_dispatch:
@@ -10,110 +10,63 @@ permissions:
   contents: read
 
 jobs:
-  verify-api:
+  verify-price:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[smoke-hjk]')
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check documented legacy union fallback without publishing prices
-        env:
-          HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
+      - name: Test a few known SKUs without collecting or publishing prices
         run: |
-          if [ -z "$HJK_API_KEY" ]; then
-            echo "::error::HJK_API_KEY unavailable"
-            exit 1
-          fi
-          PYTHONPATH=scripts python - <<'PY'
+          python - <<'PY'
           import json
-          import os
           import time
-          import urllib.parse
           import urllib.request
-          from pathlib import Path
+          from urllib.error import HTTPError, URLError
+          from decimal import Decimal, InvalidOperation
 
-          from urllib.error import HTTPError
-
-          legacy = "https://api-gw.haojingke.com/index.php/api/platform/openapi"
-          detail_url = "https://api-gw.haojingke.com/index.php/v1/api/jd/goodsdetail"
-          cases = [
-              ("Legacy fallback GPU", legacy, {
-                  "type": "goodslist", "page": "1", "pagesize": "10",
-                  "source_type": "1", "iscoupon": "0", "istotal": "1",
-                  "keyword": "RTX 5070"}),
-              ("Legacy fallback phone", legacy, {
-                  "type": "goodslist", "page": "1", "pagesize": "10",
-                  "source_type": "1", "iscoupon": "0", "istotal": "1",
-                  "keyword": "手机"}),
-              ("Current direct SKU status", detail_url, {
-                  "goods_id": "100147630258"}),
+          SKUS = [
+              ("Ryzen 9800X3D", "100147630258"),
+              ("RTX 5070", "10154190683550"),
+              ("historical control", "100003961325"),
           ]
-
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, req, fp, code, msg, headers, newurl):
                   raise ValueError("redirect refused")
 
-          def safe_code(value):
-              if isinstance(value, int) and -99999999 <= value <= 99999999:
-                  return str(value)
-              code = str(value).strip()
-              if len(code) <= 9 and code.lstrip("-").isascii() and code.lstrip("-").isdigit():
-                  return code
-              return "other"
-
-          def safe_reason(payload):
-              message = str(payload.get("message") or payload.get("msg") or "")[:600]
-              categories = {
-                  "permission": ("未授权", "授权", "权限", "登录", "认证", "签约", "无权", "开通"),
-                  "account": ("账号", "账户", "京盟", "联盟", "appkey", "appsecret", "appid"),
-                  "missing_product": ("商品不存在", "商品未找到", "没有找到", "无此商品",
-                                      "不存在", "未收录", "无此", "未查到", "无数据", "空"),
-                  "unsupported": ("不支持", "暂不", "下线", "已关闭", "接口不存在"),
-                  "rate_limit": ("限流", "频繁", "次数", "超限", "quota"),
-                  "parameter": ("参数", "缺少", "格式错误"),
-                  "service": ("系统", "服务器", "稍后", "异常", "失败"),
-              }
-              labels = [name for name, patterns in categories.items()
-                        if any(word.lower() in message.lower() for word in patterns)]
-              return "+".join(labels) if labels else ("unclassified" if message else "no-message")
-
           opener = urllib.request.build_opener(NoRedirect())
-          for label, endpoint, params in cases:
-              form = {"apikey": os.environ["HJK_API_KEY"]}
-              form.update(params)
-              request = urllib.request.Request(
-                  endpoint,
-                  data=urllib.parse.urlencode(form).encode("utf-8"),
-                  method="POST",
-                  headers={"Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
-                           "User-Agent": "TubatoolsPriceFeed/4.0"})
+          for label, sku in SKUS:
+              url = "https://p.3.cn/prices/mgets?skuIds=J_" + sku
+              req = urllib.request.Request(
+                  url, headers={"User-Agent": "TubatoolsPriceFeed-Diagnostics/1.0",
+                                "Accept": "application/json"})
               try:
-                  with opener.open(request, timeout=25) as response:
-                      if response.geturl() != endpoint:
-                          raise ValueError("unexpected URL")
-                      raw = response.read(2_000_001)
-                  if len(raw) > 2_000_000:
+                  with opener.open(req, timeout=15) as response:
+                      status = response.status
+                      if response.geturl() != url:
+                          raise ValueError("unexpected destination")
+                      raw = response.read(100_001)
+                  if len(raw) > 100_000:
                       raise ValueError("oversized response")
-                  payload = json.loads(raw)
-                  if not isinstance(payload, dict):
-                      raise ValueError("not JSON object")
-                  data = payload.get("data")
-                  rows = data.get("data") if isinstance(data, dict) else data
-                  row_count = len(rows) if isinstance(rows, list) else (0 if rows in ("", [], None) else "other")
-                  top_total = payload.get("total")
-                  nested_total = data.get("total") if isinstance(data, dict) else None
-                  total = nested_total if isinstance(nested_total, int) else top_total
-                  total = total if isinstance(total, int) and 0 <= total <= 1000000 else "unknown"
-                  print(f"{label}: status={safe_code(payload.get('status_code'))}, "
-                        f"rows={row_count}, total={total}, data_type={type(data).__name__}, "
-                        f"reason={safe_reason(payload)}")
-              except HTTPError as error:
-                  print(f"{label}: http_status={safe_code(error.code)}")
-              except Exception as error:
-                  print(f"{label}: transport_or_schema={type(error).__name__}")
+                  data = json.loads(raw)
+                  entries = data if isinstance(data, list) else []
+                  matched = [row for row in entries if isinstance(row, dict)
+                             and str(row.get("id", "")) == "J_" + sku]
+                  has_price = False
+                  for row in matched:
+                      try:
+                          price = Decimal(str(row.get("p", "")))
+                          has_price = has_price or price.is_finite() and 0 < price < 1000000
+                      except (InvalidOperation, ValueError):
+                          pass
+                  print(f"{label}: http={status}, json_list={isinstance(data, list)}, "
+                        f"sku_match={bool(matched)}, positive_price={has_price}")
+              except HTTPError as err:
+                  print(f"{label}: http={err.code}, sku_match=False, positive_price=False")
+              except (URLError, TimeoutError, ValueError, json.JSONDecodeError) as err:
+                  print(f"{label}: unavailable={type(err).__name__}")
               time.sleep(2)
-          print("No prices, raw messages, credentials or snapshots were published.")
+          print("Diagnostic only. No price values, credentials or data snapshots published.")
           PY
