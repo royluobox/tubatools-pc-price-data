@@ -58,6 +58,6 @@ python3 -m compileall -q scripts tests
 
 通常的 CI 只运行离线报价契约测试与 ZOL 编译，**不会花费 API 额度**；专门标记的测试提交或手动运行冒烟工作流除外。测试价不进入生产文件。公开快照不包含 API Key、签名或用户数据。
 
-2026-11-20 首次真实联机测试：Secret 已能从 Actions 读取，拼多多曾返回 HTTP/JSON 成功及 5 条商品行，但 RTX 5070 **0 条通过精确 SKU 校验**；京东接口返回 `status_code=1`（原因待核实）。随后复测出现连接超时。**目前不能证明其可稳定提供所需硬件价格，市场快照发布继续关闭。** 详见 [接口验证记录](docs/api-onboarding.md)。
+**2026-11-20 授权后联机复核：** 京东 `goodslist` 在 RTX 5070、9800X3D、DDR5 三组关键词及两个已知商品 ID 查询中均返回 `status_code=200`，但实际 `total=0`、`rows=0`；`goodsdetail` 对两个商品 ID 也未返回可用商品对象。授权成功并不等于有硬件价格数据。拼多多先前返回过商品行，但 RTX 5070 **0 条通过精确型号/SKU 校验**。因此当前**没有可发布的京东/拼多多目标硬件报价**，市场快照发布继续关闭。参见 [验证记录](docs/api-onboarding.md)和 [隔离诊断工作流](https://github.com/royluobox/tubatools-pc-price-data/actions/runs/44699627726)。
 
 本仓库与 VRAMGlass、ZOL、蚂蚁星球、淘宝、京东、拼多多无隶属关系。平台报价受地区、库存、会员、优惠券、运费和商品版本等影响，仅供研究参考。如来源要求停止展示，请提交 Issue。
