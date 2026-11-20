@@ -1,4 +1,4 @@
-name: Diagnose Haina history field shape (no publication)
+name: Diagnose Haina alternate history structures (no publication)
 
 on:
   push:
@@ -11,90 +11,125 @@ permissions:
 jobs:
   schema_probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check documented-field projection behavior (1 request, no values)
+      - name: Check product tags, nested SKU fields and dated deals without values
         env:
           HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
         run: |
           python - <<'PY'
           import json
-          import re
           import os
+          import re
           import time
-          import urllib.request
           import urllib.error
+          import urllib.request
 
-          if not os.getenv("HAINA_API_KEY"):
-              raise SystemExit("HAINA_API_KEY secret missing")
+          key = os.environ.get("HAINA_API_KEY")
+          if not key:
+              raise SystemExit("HAINA_API_KEY secret unavailable")
 
-          API_URL = "https://gw-openapi.zhidemai.com/product/v1"
-          FIELDS = (
-              "title", "url", "page_price", "price", "price_tags",
-              "price_info_180_days", "promotional_info", "union_spec",
-              "mall_id", "mall_name", "shop_name", "sales_cnt",
-              "comment_cnt", "standard_month_sale_qty",
-          )
-          CASES = [
-              ("request_projection", "iphone16"),
+          cases = [
+              ("product_tags", "https://gw-openapi.zhidemai.com/product/v1", {
+                  "product_query": "iphone16", "request_from": "haina",
+                  "question_id": "tubatools-alt-history-product-20261120",
+              }),
+              ("sku_nested", "https://gw-openapi.zhidemai.com/kg_sku/api/v1/search", {
+                  "query": "9800X3D",
+              }),
+              ("deal_dates", "https://gw-openapi.zhidemai.com/hj-search/discount/v2", {
+                  "product_query": "RTX 5070 显卡", "request_from": "haina",
+                  "question_id": "tubatools-alt-history-deal-20261120",
+              }),
           ]
+          candidate = re.compile(r"(price|hist|180|trend|curve|date|time|sale|coupon|discount)", re.I)
+          safe_name = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,49}$")
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, request, fp, code, msg, headers, newurl):
-                  raise ValueError("redirect disallowed")
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise ValueError("redirect blocked")
+
+          def get_paths(root):
+              found = set()
+              nodes = [("$", root, 0)]
+              seen = 0
+              while nodes and seen < 3500:
+                  path, value, depth = nodes.pop()
+                  seen += 1
+                  if depth > 9:
+                      continue
+                  if isinstance(value, dict):
+                      for k, v in list(value.items())[:55]:
+                          if not isinstance(k, str) or not safe_name.fullmatch(k):
+                              continue
+                          child = path + "." + k
+                          if candidate.search(k):
+                              found.add(child)
+                          if isinstance(v, (dict, list)):
+                              nodes.append((child, v, depth + 1))
+                  elif isinstance(value, list):
+                      for item in value[:10]:
+                          if isinstance(item, (dict, list)):
+                              nodes.append((path + "[]", item, depth + 1))
+              return sorted(found), seen
 
           opener = urllib.request.build_opener(NoRedirect())
-          for label, term in CASES:
+          for label, endpoint, payload in cases:
               request = urllib.request.Request(
-                  API_URL,
-                  data=json.dumps({
-                      "product_query": term,
-                      "request_from": "haina",
-                      "question_id": "tubatools-history-schema-20261120-" + label,
-                      "fields": "title,page_price,price_tags,price_info_180_days",
-                  }, ensure_ascii=False).encode("utf-8"),
-                  headers={
-                      "x-api-key": os.environ["HAINA_API_KEY"],
-                      "Content-Type": "application/json",
-                      "Accept": "application/json",
-                  },
+                  endpoint, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                  headers={"x-api-key": key, "Content-Type": "application/json",
+                           "Accept": "application/json"},
                   method="POST",
               )
               try:
-                  with opener.open(request, timeout=35) as response:
-                      status = response.status
-                      if response.geturl() != API_URL:
+                  with opener.open(request, timeout=40) as resp:
+                      status = resp.status
+                      if resp.geturl() != endpoint:
                           raise ValueError("unexpected redirect")
-                      raw = response.read(4_000_001)
-                  if len(raw) > 4_000_000:
-                      raise ValueError("oversized result")
-                  obj = json.loads(raw)
+                      body = resp.read(4_000_001)
+                  if len(body) > 4_000_000:
+                      raise ValueError("oversize")
+                  obj = json.loads(body)
                   if not isinstance(obj, dict):
-                      raise ValueError("unexpected envelope")
+                      raise TypeError("unexpected root")
                   data = obj.get("data")
                   rows = data.get("rows", []) if isinstance(data, dict) else []
-                  rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+                  rows = rows if isinstance(rows, list) else []
+                  entries = (obj.get("search_result", [])
+                             if label == "sku_nested" else rows)
+                  entries = entries if isinstance(entries, list) else []
                   code = obj.get("error_code")
                   code = code if isinstance(code, int) and abs(code) < 100000 else "unknown"
-                  print(f"{label}: http={status} code={code} dict_rows={len(rows)}")
-                  for field in FIELDS:
-                      present = sum(field in r for r in rows)
-                      populated = sum(field in r and r[field] not in (None, "", [], {}, "null") for r in rows)
-                      print(f"  {field}: present={present}/{len(rows)} populated={populated}/{len(rows)}")
-                  if rows:
-                      sizes = [len(r) for r in rows]
-                      print(f"  total_row_key_counts: min={min(sizes)} max={max(sizes)}")
-                      candidate_keys = sorted({k for r in rows for k in r if isinstance(k, str) and re.search(r"(?i)(hist|180|trend|curve|price)", k)})
-                      print(f"  price_or_history_related_key_names={candidate_keys}")
-                      tag_dates = sum(bool(re.search(r"20\\d{2}-\\d{2}-\\d{2}", str(r.get("price_tags", "")))) for r in rows)
-                      print(f"  price_tags_with_iso_date_pattern={tag_dates}/{len(rows)}")
-              except urllib.error.HTTPError as ex:
-                  print(f"{label}: http={ex.code}; no response body logged")
-              except Exception as ex:
-                  print(f"{label}: diagnostic_error={type(ex).__name__}; no response data logged")
+                  print(f"{label}: http={status} error_code={code} success={obj.get('success') is True} entries={len(entries)}")
+                  paths, inspected = get_paths(obj)
+                  print(f"  schema_nodes_inspected={inspected}")
+                  print(f"  candidate_field_paths={paths[:65]}")
+                  if label == "product_tags":
+                      valid = [r for r in rows if isinstance(r, dict)]
+                      hist = sum("price_info_180_days" in r for r in valid)
+                      has_min = sum("历史最低" in str(r.get("price_tags", "")) for r in valid)
+                      has_30 = sum("30天最低" in str(r.get("price_tags", "")) for r in valid)
+                      has_date = sum(bool(re.search(r"20\\d{2}-\\d{2}-\\d{2}", str(r.get("price_tags", "")))) for r in valid)
+                      print(f"  history_series_key_present={hist}/{len(valid)}")
+                      print(f"  tags_historical_min_label={has_min}/{len(valid)}")
+                      print(f"  tags_30day_min_label={has_30}/{len(valid)}")
+                      print(f"  tags_date_pattern_present={has_date}/{len(valid)}")
+                  if label == "deal_dates":
+                      valid = [r for r in rows if isinstance(r, dict)]
+                      date_count = sum("pubdate" in r and r["pubdate"] not in (None, "", "null")
+                                       for r in valid)
+                      priced = sum("page_price" in r or "price" in r for r in valid)
+                      hist = sum("price_info_180_days" in r for r in valid)
+                      print(f"  dated_offer_rows={date_count}/{len(valid)}")
+                      print(f"  offer_price_field_rows={priced}/{len(valid)}")
+                      print(f"  history_series_key_present={hist}/{len(valid)}")
+              except urllib.error.HTTPError as exc:
+                  print(f"{label}: http={exc.code}; response body withheld")
+              except Exception as exc:
+                  print(f"{label}: request_or_schema_error={type(exc).__name__}")
               time.sleep(1)
-          print("Probe finished; no API key, product titles, prices, URLs, or raw payload printed or published.")
+          print("No API key, raw payload, product listing, price, timestamp, or merchant URL printed or published.")
           PY
