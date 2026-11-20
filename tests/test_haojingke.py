@@ -9,6 +9,7 @@ import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qs
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,17 +25,17 @@ NOW = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
 
 class HaoJingKeTests(unittest.TestCase):
     def test_jd_uses_original_reference_not_conditional_coupon(self):
-        payload = {"status_code": 200, "data": [
-            {"skuId": "123456789", "skuName": "华硕 RTX 5070 12GB 显卡",
-             "materiaUrl": "http://item.jd.com/123456789.html",
-             "wlPrice": "3999.95", "wlPrice_after": "3499.99"},
-            {"skuId": "2", "skuName": "RTX 5070 Ti 显卡",
-             "materiaUrl": "https://item.jd.com/2.html", "wlPrice": "5999"},
-            {"skuId": "3", "skuName": "RTX 5070 显卡供电线",
-             "materiaUrl": "https://item.jd.com/3.html", "wlPrice": "19.9"},
-            {"skuId": "4", "skuName": "RTX 5070 12GB 显卡",
-             "materiaUrl": "https://item.jd.com/9999.html", "wlPrice": "100"},
-        ]}
+        payload = {"status_code": 200, "data": {"data": [
+            {"goods_id": "123456789", "goods_name": "华硕 RTX 5070 12GB 显卡",
+             "materiaurl": "item.jd.com/123456789.html",
+             "price": "3999.95", "price_after": "3499.99"},
+            {"goods_id": "2", "goods_name": "RTX 5070 Ti 显卡",
+             "materiaurl": "https://item.jd.com/2.html", "price": "5999"},
+            {"goods_id": "3", "goods_name": "RTX 5070 显卡供电线",
+             "materiaurl": "https://item.jd.com/3.html", "price": "19.9"},
+            {"goods_id": "4", "goods_name": "RTX 5070 12GB 显卡",
+             "materiaurl": "https://item.jd.com/9999.html", "price": "100"},
+        ]}}
         offers = parse_haojingke_response(payload, GPU, NOW, "jd")
         self.assertEqual(len(offers), 1)
         self.assertEqual(offers[0]["priceCents"], 399995)
@@ -66,22 +67,22 @@ class HaoJingKeTests(unittest.TestCase):
                          "https://mobile.yangkeduo.com/goods.html?goods_id=123456")
 
     def test_invalid_provider_responses_fail_closed(self):
-        for payload in ({"status_code": 403, "data": []},
+        for payload in ({"status_code": 403, "data": {}},
                         {"status_code": 200, "data": None},
                         {"data": []}):
             with self.assertRaises(ValueError):
                 parse_haojingke_response(payload, GPU, NOW, "jd")
 
     def test_cross_platform_feed_references_documented_source(self):
-        jd = parse_haojingke_response({"status_code": 200, "data": [{
-            "skuId": "11", "skuName": "RTX 5070 12G 显卡",
-            "materiaUrl": "https://item.jd.com/11.html", "wlPrice": "4200",
-        }]}, GPU, NOW, "jd")
-        pdd = parse_haojingke_response({"status_code": 200, "data": [{
+        jd = parse_haojingke_response({"status_code": 200, "data": {"data": [{
+            "goods_id": "11", "goods_name": "RTX 5070 12G 显卡",
+            "materiaurl": "https://item.jd.com/11.html", "price": "4200",
+        }]}}, GPU, NOW, "jd")
+        pdd = parse_haojingke_response({"status_code": 200, "data": {"goods_list": [{
             "goods_id": 22, "goods_name": "RTX 5070 12G 显卡",
             "materiaurl": "https://mobile.yangkeduo.com/goods2.html?goods_id=22",
             "price": "3800",
-        }]}, GPU, NOW, "pdd")
+        }]}}, GPU, NOW, "pdd")
         feed = build_feed({GPU["modelKey"]: jd + pdd}, [GPU], NOW,
                           provider="haojingke")
         self.assertEqual(feed["models"][0]["price"], 4000)
@@ -98,7 +99,7 @@ class HaoJingKeTests(unittest.TestCase):
             def open(self, request, timeout):
                 self.request = request
                 self.timeout = timeout
-                return FakeResponse(b'{"status_code":200,"data":[]}')
+                return FakeResponse(b'{"status_code":200,"data":{"data":[]}}')
 
         opener = FakeOpener()
         with patch("haojingke.urllib.request.build_opener", return_value=opener):
@@ -108,6 +109,11 @@ class HaoJingKeTests(unittest.TestCase):
         self.assertTrue(opener.request.full_url.startswith("https://"))
         self.assertNotIn("FAKE_TEST_KEY", opener.request.full_url)
         self.assertIn(b"FAKE_TEST_KEY", opener.request.data)
+        params = parse_qs(opener.request.data.decode("utf-8"))
+        self.assertEqual(params["pageindex"], ["1"])
+        self.assertEqual(params["pagesize"], ["20"])
+        self.assertEqual(params["iscoupon"], ["0"])
+        self.assertNotIn("page_size", params)
 
 
 if __name__ == "__main__":
