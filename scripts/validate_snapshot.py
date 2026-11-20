@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from marketplace import official_link, title_matches
+from fetch_frocloud import validate_feed as validate_frocloud_feed
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "site" / "data"
@@ -97,6 +98,11 @@ def main() -> int:
             "VRAMGlass": validate(DATA / "latest.json"),
             "ZOL": validate(DATA / "catalog.json"),
             "Marketplace": validate(DATA / "market.json", optional=True),
+            "FrocloudMonthly": (
+                validate_frocloud_feed(json.loads((DATA / "frocloud-monthly.json").read_text("utf-8")))
+                if (DATA / "frocloud-monthly.json").exists()
+                else {"status": "not-configured", "models": 0}
+            ),
         }
     except (KeyError, ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
         print(f"FEED VALIDATION FAILED: {exc}", file=sys.stderr)
