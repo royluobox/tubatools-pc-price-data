@@ -20,8 +20,8 @@
 
 | 平台 | 第三方接口字段 | 我们的处理 |
 | --- | --- | --- |
-| 京东 | `skuId`, `skuName`, `materiaUrl`, `wlPrice` | 校验 SKU 和 `item.jd.com` 链接；`wlPrice` 标记为原价参考 |
-| 京东 | `wlPrice_after` | 单独记录条件性券后参考值，不作为历史走势价格 |
+| 京东 | `data.data[]`: `goods_id`, `goods_name`, `materiaurl`, `price` | 校验 SKU 和 `item.jd.com` 链接；`price` 标记为原价参考 |
+| 京东 | `price_after` | 单独记录条件性券后参考值，不作为历史走势价格 |
 | 拼多多 | `goods_id`, `goods_name`, `materiaurl`, `price` | 校验 `goods_id` 在官方链接内一致；`price` 标记为原价参考 |
 | 拼多多 | `price_after` | 单独记录条件性券后参考值 |
 
