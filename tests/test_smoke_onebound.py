@@ -52,6 +52,17 @@ class OneboundSmokeSummaryTests(unittest.TestCase):
         self.assertEqual(summary["error_code"], "4005")
         self.assertNotIn("secret-value", repr(summary))
 
+    def test_parameter_error_logs_only_whitelisted_hint(self):
+        payload = {
+            "error_code": "4003",
+            "error": "num_iid 参数错误 key=private-key-value",
+            "reason": "secret=private-secret-value",
+        }
+        summary = summarize(payload, self.sku, self.model, today=self.today)
+        self.assertEqual(summary["parameter_hint"], "num_iid")
+        self.assertNotIn("private-key-value", repr(summary))
+        self.assertNotIn("private-secret-value", repr(summary))
+
     def test_unrelated_product_is_rejected(self):
         payload = {
             "error_code": "0000",
