@@ -141,6 +141,8 @@ def main() -> int:
                 rows_count = "unknown"
                 if source in {"jd", "pdd"} and isinstance(response.get("data"), dict):
                     rows = response["data"].get("data" if source == "jd" else "goods_list")
+                    if source == "jd" and rows == "" and response["data"].get("total") == 0:
+                        rows_count = "0"
                     if isinstance(rows, list):
                         rows_count = str(len(rows))
                         title_hits = sum(isinstance(row, dict) and
