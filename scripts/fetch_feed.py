@@ -79,7 +79,8 @@ def get_int(obj: dict, *names: str) -> int:
 
 def parse_time(text: str) -> datetime | None:
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        value = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return value.astimezone(timezone.utc) if value.tzinfo else None
     except (ValueError, AttributeError):
         return None
 
@@ -164,6 +165,7 @@ def main() -> int:
     for model_id, model_key, name in MODELS:
         prev = prev_models.get(model_id, {})
         history: list[dict] = []
+        fetched_this_history = history_fresh
 
         if history_fresh:
             history = prev.get("history") or []
@@ -171,16 +173,19 @@ def main() -> int:
         else:
             try:
                 history = fetch_history(model_id)
+                fetched_this_history = bool(history)
                 print(f"{model_id}: 历史 {len(history)} 天")
             except urllib.error.HTTPError as exc:
                 print(f"{model_id} 历史抓取失败：HTTP {exc.code}", file=sys.stderr)
+                history_all_ok = False
             except Exception as exc:  # noqa: BLE001
                 print(f"{model_id} 历史抓取失败：{exc}", file=sys.stderr)
+                history_all_ok = False
             time.sleep(SLEEP_SECONDS)
 
         if not history:
             history = prev.get("history") or []
-        if not history and not history_fresh:
+        if not fetched_this_history and not history_fresh:
             history_all_ok = False
 
         quote = quotes.get(model_id)
@@ -193,6 +198,21 @@ def main() -> int:
             print(f"{model_id} 无数据，跳过")
             continue
 
+        # Per-model freshness: a partial successful API response must not mark
+        # previously cached prices of missing GPU models as freshly observed.
+        published = parse_time(quote.get("publishedAt", "")) if quote else None
+        previous_observed = (
+            parse_time(prev.get("observedAt", ""))
+            or parse_time(previous.get("capturedAt", ""))
+        )
+        last_history_date = parse_time(
+            (history[-1]["d"] + "T12:00:00Z") if history else ""
+        )
+        observed_at = (
+            (published if published and published <= now else now)
+            if quote else (previous_observed or last_history_date or now)
+        )
+
         models.append(
             {
                 "vramglassId": model_id,
@@ -203,6 +223,7 @@ def main() -> int:
                 "high": quote["high"] if quote else get_int(prev, "high") or price,
                 "listingCount": quote["listingCount"] if quote else get_int(prev, "listingCount"),
                 "publishedAt": quote["publishedAt"] if quote else prev.get("publishedAt", ""),
+                "observedAt": observed_at.isoformat().replace("+00:00", "Z"),
                 "historyDays": HISTORY_DAYS,
                 "history": history,
             }

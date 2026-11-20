@@ -1,40 +1,63 @@
-# tubatools-pc-price-data
+# 图吧工具箱 CE · 价格数据仓库
 
-图吧工具箱「电脑配件价格走势」插件的公开行情快照仓库。
+本仓库为 [价格走势插件](https://github.com/royluobox/tubatools-pc-price-trend) 定时生成**可溯源**的公开快照。三条价格口径相互独立：
 
-- 数据地址：<https://royluobox.github.io/tubatools-pc-price-data/data/latest.json>
-- 更新方式：GitHub Actions 每 8 小时调用 VRAMGlass 公开 API，抓取闲鱼市场 10 个主流显卡型号的现价、挂单数和最多 365 天历史。
-- 插件读取这份快照后，所有下载者无需自备 API Key 即可看到显卡现价与历史走势；插件包内还会附带打包时的种子数据（seed），离线时也能显示最近行情。
+| 数据文件 | 内容 | 来源 | 是否真实电商 SKU 报价 |
+| --- | --- | --- | --- |
+| [latest.json](https://royluobox.github.io/tubatools-pc-price-data/data/latest.json) | 9 款显卡的闲鱼挂牌统计和历史 | VRAMGlass 免费 API | 否，挂单 ≠ 成交 |
+| [catalog.json](https://royluobox.github.io/tubatools-pc-price-data/data/catalog.json) | 12 类电脑配件、约 1,700 个型号的参考价 | ZOL 产品/趋势页 | 否，参考价 ≠ 到手价 |
+| market.json（配置与许可后生成） | 带平台、SKU、价格类型、商品页、时间的参考标价 | 蚂蚁星球（原好京客）京东/拼多多 API；淘宝联盟可选 | 第三方 API 原价参考，绝非结算价 |
 
-## 数据来源与声明
+## 自动更新
 
-数据来源：**VRAMGlass**（<https://vramglass.com/>）。本仓库仅为公开接口数据的定时快照，用于插件分发场景，不存储、不收集用户数据。
+- GitHub Actions 每 8 小时检查 VRAMGlass 和 ZOL，原有免费额度和工作流保持。
+- 在有第三方蚂蚁星球 API Key，**且确认可公开再分发**后，查询首批 4 个严格型号、2 个平台，生成 [market.json](https://royluobox.github.io/tubatools-pc-price-data/data/market.json)。后续可在验证免费配额后扩大至 12 个或更多。
+- 新增 **Smoke test HaoJingKe API (no publication)** 手动测试工作流：各查 1 次京东、拼多多的 RTX 5070，不写入真实快照。此工作流与 VRAMGlass 用量无关。
+- **无凭据时安全跳过**新来源，不生成虚假报价、不覆盖旧 market.json。源不可用时保留上次成功结果，由插件将过期资料单独标记。
+- 每个型号仅接受严格型号匹配、排除配件和错误显存版本的真实 SKU；最多保存 12 条，保留时间、类型及官方商品链接。
+- 不推演成交价、优惠券或历史缺失日期，也不把 ZOL、闲鱼、淘宝报价计算成同一个中位价。
 
-- 数据版权归 VRAMGlass 所有，仅供参考，不构成交易建议。
-- VRAMGlass 与图吧工具箱无隶属关系。
-- 如数据提供方希望停止镜像，请提交 Issue，本仓库会立即下线数据。
+### 免费额度策略
 
-## 结构
+VRAMGlass 免费额度继续用于 9 款显卡，历史最多每 20 小时请求一次。第三方电商 API 仅在**明确启用发布**后查询，初始上限为 **4 个型号 × 2 平台 / 8 小时（最多 24 次/日）**；真实额度未知，按实际授权调整。失败时不无限重试，更不会绕过购物网站限制。原淘宝联盟官方采集器仅作合法授权的备用模式。
 
+## 获取 API 权限
+
+参见 [申请和配置指南](docs/api-onboarding.md)。当前首选是在蚂蚁星球申请单个 `HJK_API_KEY`，无需先为插件申请 Windows 代码签名证书。凭据只填在**本数据仓库 GitHub Actions Secrets**，绝不要写进代码、Issue、聊天、插件包或公开 JSON。必须在明确得到再分发许可后才能启用 `MARKET_PUBLISH_ENABLED=true`。
+
+## market.json 数据约定
+
+```json
+{
+  "modelKey": "vga|RTX5070",
+  "name": "RTX 5070",
+  "slug": "vga",
+  "price": 3999,
+  "offers": [{
+    "source": "HaoJingKe third-party API",
+    "platform": "京东",
+    "skuId": "112233",
+    "title": "示例 RTX 5070 显卡",
+    "url": "https://item.jd.com/112233.html",
+    "price": 3999,
+    "priceType": "original-reference",
+    "observedAt": "2026-11-20T06:00:00Z"
+  }],
+  "history": []
+}
 ```
-site/data/latest.json   # 插件读取的快照
-site/index.html         # 数据说明页
-scripts/fetch_feed.py   # 抓取脚本（VRAMGLASS_KEY 由仓库 Secret 注入）
-.github/workflows/      # 定时抓取并部署 GitHub Pages
+
+**这只是结构样例，不是实际采集到的报价。** 这里的价格是第三方接口标注的「原价」，不是当前可购买到的到手价。型号白名单和正则规则在 [market-targets.json](config/market-targets.json)。
+
+## 开发、测试与隐私
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 -m compileall -q scripts tests
 ```
 
-`latest.json` 主要字段：
+通常的 CI 只运行离线报价契约测试与 ZOL 编译，**不会花费 API 额度**；专门标记的测试提交或手动运行冒烟工作流除外。测试价不进入生产文件。公开快照不包含 API Key、签名或用户数据。
 
-| 字段 | 含义 |
-| --- | --- |
-| `capturedAt` | 快照抓取时间（UTC） |
-| `attribution` | 来源署名与免责声明 |
-| `models[].vramglassId` | VRAMGlass 型号 ID |
-| `models[].modelKey` | 插件内型号键，例如 `vga\|RTX5090` |
-| `models[].price/low/high` | 中位价与 Q1/Q3 区间（元） |
-| `models[].listingCount` | 闲鱼在售挂单数 |
-| `models[].history[]` | `{d: 日期, median: 中位价}`，最多 365 天 |
+2026-11-20 首次真实联机测试：Secret 已能从 Actions 读取，拼多多曾返回 HTTP/JSON 成功及 5 条商品行，但 RTX 5070 **0 条通过精确 SKU 校验**；京东接口返回 `status_code=1`（原因待核实）。随后复测出现连接超时。**目前不能证明其可稳定提供所需硬件价格，市场快照发布继续关闭。** 详见 [接口验证记录](docs/api-onboarding.md)。
 
-## 部署
-
-仓库 Settings → Pages → Source 选择 **GitHub Actions**；在 Actions 中手动运行一次 `Update price feed` 即可发布。仓库 Secret `VRAMGLASS_KEY` 保存 API Key，不会出现在代码或数据中。
+本仓库与 VRAMGlass、ZOL、蚂蚁星球、淘宝、京东、拼多多无隶属关系。平台报价受地区、库存、会员、优惠券、运费和商品版本等影响，仅供研究参考。如来源要求停止展示，请提交 Issue。
