@@ -1,4 +1,4 @@
-name: Smoke test HaoJingKe JD coverage (no publication)
+name: Smoke test HaoJingKe JD detail (no publication)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Probe four JD GPU CPU RAM and official SKU lookups without storing results
+      - name: Probe documented JD detail on two known SKUs without storing results
         env:
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
         run: |
@@ -35,17 +35,11 @@ jobs:
           import urllib.request
           from pathlib import Path
 
-          from haojingke import DOCUMENTED_ENDPOINTS
-          from marketplace import title_matches
-
-          targets = {x["modelKey"]: x for x in
-                     json.loads(Path("config/market-targets.json").read_text("utf-8"))}
-          selected_skus = {"100147630258", "10154190683550"}
+          # Documented HJK goodsdetail API uses goods_id (singular).
+          endpoint = "https://api-gw.haojingke.com/index.php/v1/api/jd/goodsdetail"
           cases = [
-              ("GPU keyword", {"keyword": "RTX5070"}, "vga|RTX5070"),
-              ("CPU keyword", {"keyword": "9800X3D"}, "cpu|RYZEN79800X3D"),
-              ("RAM keyword", {"keyword": "DDR5"}, None),
-              ("Known JD SKUs", {"goods_ids": ",".join(sorted(selected_skus))}, None),
+              ("Ryzen 7 9800X3D", "100147630258", "9800X3D"),
+              ("RTX 5070", "10154190683550", "5070"),
           ]
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -53,19 +47,17 @@ jobs:
                   raise ValueError("redirect refused")
 
           opener = urllib.request.build_opener(NoRedirect())
-          for label, parameters, model_key in cases:
-              form = {"apikey": os.environ["HJK_API_KEY"],
-                      "pageindex": "1", "pagesize": "20", "iscoupon": "0"}
-              form.update(parameters)
+          for label, sku, expected_model in cases:
+              form = {"apikey": os.environ["HJK_API_KEY"], "goods_id": sku}
               request = urllib.request.Request(
-                  DOCUMENTED_ENDPOINTS["jd"],
+                  endpoint,
                   data=urllib.parse.urlencode(form).encode("utf-8"),
                   method="POST",
                   headers={"Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
                            "User-Agent": "TubatoolsPriceFeed/4.0"})
               try:
                   with opener.open(request, timeout=25) as response:
-                      if response.geturl() != DOCUMENTED_ENDPOINTS["jd"]:
+                      if response.geturl() != endpoint:
                           raise ValueError("unexpected URL")
                       raw = response.read(2_000_001)
                   if len(raw) > 2_000_000:
@@ -73,21 +65,24 @@ jobs:
                   payload = json.loads(raw)
                   if not isinstance(payload, dict):
                       raise ValueError("not a JSON object")
-                  info = payload.get("data")
-                  rows = info.get("data") if isinstance(info, dict) else None
-                  total = info.get("total") if isinstance(info, dict) else None
                   status = payload.get("status_code")
-                  allowed_status = status if isinstance(status, int) and 0 <= status <= 999 else "other"
-                  allowed_total = total if isinstance(total, int) and 0 <= total <= 1000000 else "unknown"
-                  count = len(rows) if isinstance(rows, list) else (0 if rows == "" and allowed_total == 0 else "not-list")
-                  matching = sum(isinstance(x, dict) and title_matches(x.get("goods_name", ""), targets[model_key])
-                                 for x in rows) if isinstance(rows, list) and model_key else "n/a"
-                  found_ids = sum(str(x.get("goods_id")) in selected_skus for x in rows
-                                  if isinstance(x, dict)) if isinstance(rows, list) else 0
-                  print(f"{label}: status={allowed_status}, total={allowed_total}, rows={count}, "
-                        f"exact_titles={matching}, known_skus={found_ids}")
+                  status = status if isinstance(status, int) and 0 <= status <= 999 else "other"
+                  details = payload.get("data")
+                  if isinstance(details, list):
+                      details = details[0] if details and isinstance(details[0], dict) else None
+                  elif isinstance(details, dict) and isinstance(details.get("data"), dict):
+                      details = details["data"]
+                  available = isinstance(details, dict) and bool(details)
+                  returned_sku = str(details.get("goods_id", "")) if available else ""
+                  title = str(details.get("goods_name", "")) if available else ""
+                  exact_id = bool(returned_sku and returned_sku == sku)
+                  title_found = bool(expected_model in title.upper())
+                  price_present = bool(available and details.get("price") not in (None, ""))
+                  print(f"{label} detail: status={status}, has_detail={available}, "
+                        f"sku_match={exact_id}, model_in_title={title_found}, "
+                        f"has_price_field={price_present}")
               except Exception as error:
-                  print(f"{label}: transport/schema error type={type(error).__name__}")
+                  print(f"{label} detail: transport/schema error type={type(error).__name__}")
               time.sleep(2)
           print("No price values, API credentials, or snapshots were logged or published.")
           PY
