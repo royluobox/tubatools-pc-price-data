@@ -1,8 +1,7 @@
-name: Smoke test HaoJingKe API (no publication)
+name: Smoke test HaoJingKe JD schema (no publication)
 
 on:
   workflow_dispatch:
-  # One-off diagnostics: report only status, error category and matched counts.
   push:
     branches: ["codex/authorized-market-feed-v3"]
     paths: [".github/workflows/smoke-market.yml"]
@@ -20,17 +19,41 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Test one RTX 5070 search per platform, without publishing prices
+      - name: Inspect one JD response schema, no values or publication
         env:
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
-          MARKET_PROVIDER: "haojingke"
-          MARKET_SMOKE_TEST: "true"
-          MARKET_SMOKE_MODEL_KEY: "vga|RTX5070"
-          HJK_PLATFORMS: "jd,pdd"
-          HJK_MAX_TARGETS: "1"
         run: |
           if [ -z "$HJK_API_KEY" ]; then
-            echo "::error::HJK_API_KEY is unavailable to this workflow"
+            echo "::error::HJK_API_KEY unavailable"
             exit 1
           fi
-          python scripts/fetch_market.py
+          PYTHONPATH=scripts python - <<'PY'
+          import json
+          import os
+          from haojingke import query_haojingke
+
+          def schema(value, depth=0):
+              if depth > 4:
+                  return "max-depth"
+              if isinstance(value, dict):
+                  result = {}
+                  for name, child in list(value.items())[:30]:
+                      if not isinstance(name, str) or len(name) > 50:
+                          continue
+                      if any(token in name.lower() for token in
+                             ("token", "secret", "password", "cookie", "apikey", "mobile")):
+                          continue
+                      result[name] = schema(child, depth + 1)
+                  return result
+              if isinstance(value, list):
+                  return {"type": "list", "length": len(value),
+                          "first_schema": schema(value[0], depth + 1) if value else None}
+              return type(value).__name__
+
+          try:
+              payload = query_haojingke("jd", {"query": "RTX 5070"}, os.environ["HJK_API_KEY"])
+              print("JD RESPONSE SHAPE ONLY:", json.dumps(schema(payload), ensure_ascii=False))
+          except Exception as error:
+              print("JD probe failure type:", type(error).__name__)
+              raise SystemExit(1)
+          PY
