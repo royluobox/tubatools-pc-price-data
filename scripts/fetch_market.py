@@ -192,7 +192,8 @@ def main() -> int:
             time.sleep(pause)
 
     if smoke:
-        print(f"Smoke test only: {success} accepted responses, {matched} exact SKU matches;"
+        identity_label = "verified listing references" if provider == "haina" else "exact item references"
+        print(f"Smoke test only: {success} accepted responses, {matched} {identity_label};"
               " no snapshot written.")
         return 0 if success and matched else 1
 
