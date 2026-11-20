@@ -2,7 +2,7 @@ name: Smoke test HaoJingKe API (no publication)
 
 on:
   workflow_dispatch:
-  # One-off run on this draft PR branch; diagnostics disclose status/shape only.
+  # One-off run; provider field mapping now follows HaoJingKe's own docs.
   push:
     branches: ["codex/authorized-market-feed-v3"]
     paths: [".github/workflows/smoke-market.yml"]
