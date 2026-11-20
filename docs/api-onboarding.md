@@ -9,7 +9,7 @@
 
 1. 在服务方网站注册，找到「开放 API」/「申请 API Key」。**不要**将 Key 复制进插件 DLL、仓库源码、聊天、Issue 或 PR。
 2. 在**本数据仓库** Settings → Secrets and variables → Actions → New repository secret 创建 `HJK_API_KEY`。
-3. 手动运行 Actions → **Smoke test HaoJingKe API (no publication)**。各查一次 RTX 5070 的京东、拼多多商品，显示返回行数及精确匹配条数，**不会公开价格、写入 market.json 或消耗 VRAMGlass 额度**。
+3. 手动运行 Actions → **Smoke test HaoJingKe API (no publication)**。从下拉菜单选择一个已审阅的 CPU/GPU 型号，以及京东、拼多多或两者；**最多发起 2 次查询**，仅显示返回行数和精确匹配数，**不会公开价格、写入 market.json 或消耗 VRAMGlass 额度**。工作流没有定时或代码推送触发器，避免意外消耗免费额度。
 4. 检查服务是否支持 HTTPS；服务方文档例子是 HTTP，代码故意只接受 HTTPS。**如 HTTPS 不可用，暂停接入，不要让 API Key 经明文网络传输。**
 5. 在正式使用前，向服务方确认：允许把 SKU 标价和对应时间**长期保存、通过 GitHub Pages 公开展示、向第三方图吧工具箱 CE 用户再分发**；明确免费额度、地域和调用频率限制。免费调用 API 不自动授予二次发布商品数据的权利。
 6. 只有确认权利后，才将 Actions **Repository variable** `MARKET_PUBLISH_ENABLED` 设为 `true`，再手动运行 Update price feed。未设置时定时任务完全跳过电商 API。
@@ -36,6 +36,12 @@
 - **安全**：以上冒烟工作流未写入 `market.json`，不曾部署公开数据，`MARKET_PUBLISH_ENABLED` 保持未启用。
 
 公开展示前还需解决：核实京东 `status_code=1` 的实际原因、验证多种硬件型号的有效覆盖率、确认稳定性/免费额度及数据存储和再分发许可。不要因为能返回 200 就认为价格数据可直接公开。
+
+#### 京东状态错误的后续核对
+
+- 在[蚂蚁星球会员中心](https://www.haojingke.com/center/index.html#/personal/dashboard)查找「京东联盟设置」或「我的京盟」，确认京东联盟账号关联状态；必要时先了解[京东联盟](https://union.jd.com)注册与推广位管理。
+- [好京客京东 API 文档](https://www.haojingke.com/open-api/jd)说明部分**转链、订单**接口需要京东联盟设置；这不能直接证明**商品搜索**接口的状态码 1 也是同一原因。需向服务方核实 `goodslist` 返回错误含义。
+- 不要把联盟 App Secret、会员登录密码或完整错误响应发到聊天或提交仓库。后续用上面的限量手动测试分别检查显卡与 CPU 的命中率。
 
 ## 备用：淘宝联盟官方 TOP API
 
