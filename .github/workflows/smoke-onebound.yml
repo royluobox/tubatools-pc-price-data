@@ -1,7 +1,8 @@
 name: Smoke test OneBound JD history (one call; no publication)
 
-# One request only on the diagnostic branch's initial workflow push, or on
-# explicit manual dispatch. NEVER scheduled or run as part of update-feed.
+# One request per diagnostic workflow-file push, or per explicit manual dispatch.
+# Uses the vendor-documented minimal query after the first 4003 parameter error.
+# NEVER scheduled or run as part of update-feed.
 on:
   workflow_dispatch:
     inputs:
