@@ -55,6 +55,9 @@ jobs:
           TBK_PAUSE_SECONDS: "2"
         run: python scripts/fetch_market.py
 
+      - name: Validate all snapshots before publication
+        run: python scripts/validate_snapshot.py
+
       - name: Commit snapshot
         run: |
           git config user.name "github-actions[bot]"
