@@ -103,6 +103,10 @@ def parse_haojingke_response(payload: dict, target: dict, observed_at: datetime,
     if not isinstance(data, dict):
         raise ValueError("HaoJingKe response data must be an object")
     rows = data.get("data" if provider == "jd" else "goods_list")
+    # Live JD goodslist uses an empty string with total=0 for no matches.
+    # Do not reinterpret other malformed payloads as an empty result.
+    if provider == "jd" and rows == "" and data.get("total") == 0:
+        return []
     if not isinstance(rows, list):
         raise ValueError("HaoJingKe product list missing")
 
