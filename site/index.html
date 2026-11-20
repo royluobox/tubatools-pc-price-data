@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>图吧工具箱 · 显卡价格快照</title>
+  <title>图吧工具箱 · 电脑配件价格数据</title>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -34,7 +34,7 @@
   </style>
 </head>
 <body>
-  <h1>显卡价格快照</h1>
+  <h1>电脑配件价格数据</h1>
   <p class="muted">图吧工具箱「电脑配件价格走势」插件的公开数据源。</p>
 
   <div class="card">
@@ -45,9 +45,19 @@
   </div>
 
   <div class="card">
+    <p><strong>全品类参考价：</strong><a href="data/catalog.json">data/catalog.json</a></p>
+    <p>来自中关村在线公开产品信息；参考标价和关注热度不等于真实购物成交价。</p>
+  </div>
+
+  <div class="card">
+    <p><strong>电商公开标价：</strong><a href="data/market.json">data/market.json</a>（须配置合法授权 API 后才可生成）</p>
+    <p>逐 SKU 保留来源、采样时间、商品链接和价格类型。首次开通前此链接可能不存在。</p>
+  </div>
+
+  <div class="card">
     <p><strong>声明</strong></p>
-    <p>本仓库只是 VRAMGlass 公开接口数据的定时快照，用于让插件用户无需自备 API Key 也能查看显卡行情。
-      数据版权归 VRAMGlass 所有；数据仅供参考，不构成交易建议。VRAMGlass 与图吧工具箱无隶属关系。</p>
+    <p>本仓库定时保存 VRAMGlass、ZOL 与未来获授权的电商公开报价；闲鱼挂单价、ZOL 参考价、电商公开标价是不同统计口径。
+      数据仅供研究参考，不构成交易建议。图吧工具箱与上述平台无隶属关系。</p>
     <p>如数据提供方希望停止镜像，请在本仓库提交 Issue，我们会立即下线相关数据。</p>
   </div>
 

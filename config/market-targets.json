@@ -1,0 +1,93 @@
+[
+  {
+    "modelKey": "vga|RTX5090",
+    "name": "RTX 5090",
+    "slug": "vga",
+    "query": "RTX 5090 显卡",
+    "required": ["RTX[ -]*5090(?![A-Z0-9])"],
+    "excluded": ["5090D", "5090[ -]*D"]
+  },
+  {
+    "modelKey": "vga|RTX5080",
+    "name": "RTX 5080",
+    "slug": "vga",
+    "query": "RTX 5080 显卡",
+    "required": ["RTX[ -]*5080(?![A-Z0-9])"]
+  },
+  {
+    "modelKey": "vga|RTX5070TI",
+    "name": "RTX 5070 Ti",
+    "slug": "vga",
+    "query": "RTX 5070 Ti 16GB 显卡",
+    "required": ["RTX[ -]*5070[ -]*Ti(?![A-Z0-9])"]
+  },
+  {
+    "modelKey": "vga|RTX5070",
+    "name": "RTX 5070",
+    "slug": "vga",
+    "query": "RTX 5070 显卡",
+    "required": ["RTX[ -]*5070(?![A-Z0-9])"],
+    "excluded": ["5070[ -]*Ti", "5070Ti"]
+  },
+  {
+    "modelKey": "vga|RTX5060TI",
+    "name": "RTX 5060 Ti 16GB",
+    "slug": "vga",
+    "query": "RTX 5060 Ti 16GB 显卡",
+    "required": ["RTX[ -]*5060[ -]*Ti(?![A-Z0-9])", "(16[ -]*GB|16G(?![0-9]))"],
+    "excluded": ["8[ -]*GB", "8G(?![0-9])"]
+  },
+  {
+    "modelKey": "vga|RTX5060",
+    "name": "RTX 5060",
+    "slug": "vga",
+    "query": "RTX 5060 显卡",
+    "required": ["RTX[ -]*5060(?![A-Z0-9])"],
+    "excluded": ["5060[ -]*Ti", "5060Ti"]
+  },
+  {
+    "modelKey": "vga|RX9070XT",
+    "name": "RX 9070 XT",
+    "slug": "vga",
+    "query": "RX 9070 XT 显卡",
+    "required": ["RX[ -]*9070[ -]*XT(?![A-Z0-9])"]
+  },
+  {
+    "modelKey": "vga|RX9070",
+    "name": "RX 9070",
+    "slug": "vga",
+    "query": "RX 9070 显卡",
+    "required": ["RX[ -]*9070(?![A-Z0-9])"],
+    "excluded": ["9070[ -]*XT"]
+  },
+  {
+    "modelKey": "vga|RX9060XT",
+    "name": "RX 9060 XT 16GB",
+    "slug": "vga",
+    "query": "RX 9060 XT 16GB 显卡",
+    "required": ["RX[ -]*9060[ -]*XT(?![A-Z0-9])", "(16[ -]*GB|16G(?![0-9]))"],
+    "excluded": ["8[ -]*GB", "8G(?![0-9])"]
+  },
+  {
+    "modelKey": "cpu|I514600KF",
+    "name": "Intel Core i5-14600KF",
+    "slug": "cpu",
+    "query": "i5-14600KF CPU 盒装",
+    "required": ["i5[ -]*14600KF(?![A-Z0-9])"]
+  },
+  {
+    "modelKey": "cpu|RYZEN79800X3D",
+    "name": "Ryzen 7 9800X3D",
+    "slug": "cpu",
+    "query": "AMD R7 9800X3D CPU",
+    "required": ["9800X3D(?![A-Z0-9])"]
+  },
+  {
+    "modelKey": "cpu|RYZEN59600X",
+    "name": "Ryzen 5 9600X",
+    "slug": "cpu",
+    "query": "AMD R5 9600X CPU",
+    "required": ["9600X(?![A-Z0-9])"],
+    "excluded": ["9600X3D"]
+  }
+]
