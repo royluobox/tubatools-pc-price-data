@@ -40,10 +40,10 @@ jobs:
               "deal": "https://gw-openapi.zhidemai.com/hj-search/discount/v2",
           }
           CASES = [
-              ("gpu", "product", {"product_query": "RTX 5070 显卡", "request_from": "haina", "question_id": "tubatools-coverage-gpu"}),
-              ("cpu", "product", {"product_query": "AMD Ryzen 7 9800X3D CPU", "request_from": "haina", "question_id": "tubatools-coverage-cpu"}),
-              ("sku", "sku", {"query": "AMD Ryzen 7 9800X3D"}),
-              ("deal", "deal", {"product_query": "RTX 5070 显卡", "request_from": "haina", "question_id": "tubatools-coverage-deal", "size": 5}),
+              ("cpu_short", "product", {"product_query": "9800X3D", "request_from": "haina", "question_id": "tubatools-cpu-short"}),
+              ("cpu_zh", "product", {"product_query": "锐龙 7 9800X3D", "request_from": "haina", "question_id": "tubatools-cpu-zh"}),
+              ("gpu16", "product", {"product_query": "RTX 5060 Ti 16GB 显卡", "request_from": "haina", "question_id": "tubatools-gpu16"}),
+              ("phone_history", "product", {"product_query": "iPhone 16 Plus", "request_from": "haina", "question_id": "tubatools-history-control"}),
           ]
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -72,10 +72,12 @@ jobs:
 
           def target_match(text, label):
               title = str(text or "").upper()
-              if label == "gpu":
-                  return bool(re.search(r"RTX[ -]*5070(?![A-Z0-9])", title)) and not bool(re.search(r"5070[ -]*TI", title))
-              if label == "cpu":
+              if label == "gpu16":
+                  return bool(re.search(r"RTX[ -]*5060[ -]*TI(?![A-Z0-9])", title) and re.search(r"(16[ -]*GB|16G(?![0-9]))", title) and not re.search(r"(8[ -]*GB|8G(?![0-9]))", title))
+              if label.startswith("cpu"):
                   return bool(re.search(r"9800X3D(?![A-Z0-9])", title))
+              if label == "phone_history":
+                  return "IPHONE 16 PLUS" in title
               return False
 
           opener = urllib.request.build_opener(NoRedirect())
@@ -109,11 +111,14 @@ jobs:
                       rows = rows if isinstance(rows, list) else []
                       matches = [r for r in rows if isinstance(r, dict) and target_match(r.get("title"), label if kind == "product" else "gpu")]
                       priced = [r for r in matches if price_ok(r.get("page_price"))]
+                      history_present = sum(1 for r in rows if isinstance(r, dict) and "price_info_180_days" in r)
+                      history_nonempty = sum(1 for r in rows if isinstance(r, dict) and r.get("price_info_180_days") not in (None, "", "null", []))
                       historical = sum(count_history(r.get("price_info_180_days")) for r in matches[:30])
                       malls = len({str(r.get("mall_name")) for r in priced if r.get("mall_name")})
                       print(f"{label}: http={status}, error_code={code}, total_rows={len(rows)}, "
                             f"exact_title_matches={len(matches)}, page_price_hits={len(priced)}, "
-                            f"distinct_malls={malls}, history_points={historical}")
+                            f"distinct_malls={malls}, history_field_present={history_present}, "
+                            f"history_field_nonempty={history_nonempty}, history_points={historical}")
                   else:
                       hits = obj.get("search_result", [])
                       hits = hits if isinstance(hits, list) else []
