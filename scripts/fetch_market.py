@@ -19,6 +19,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from haojingke import parse_haojingke_response, query_haojingke
+from haina import parse_haina_response, query_haina, record_daily_history
 from marketplace import build_feed, parse_taobao_response, title_matches, top_sign
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,14 +81,19 @@ def main() -> int:
         return 0
 
     hjk_key = os.environ.get("HJK_API_KEY", "").strip()
+    haina_key = os.environ.get("HAINA_API_KEY", "").strip()
     app_key, secret, adzone = (
         os.environ.get(name, "").strip()
         for name in ("TBK_APP_KEY", "TBK_APP_SECRET", "TBK_ADZONE_ID")
     )
     requested = os.environ.get("MARKET_PROVIDER", "auto").strip().lower()
-    if requested not in {"auto", "haojingke", "taobao"}:
-        raise SystemExit("MARKET_PROVIDER must be auto, haojingke or taobao")
-    provider = ("haojingke" if hjk_key else "taobao") if requested == "auto" else requested
+    if requested not in {"auto", "haina", "haojingke", "taobao"}:
+        raise SystemExit("MARKET_PROVIDER must be auto, haina, haojingke or taobao")
+    provider = (("haina" if haina_key else "haojingke" if hjk_key else "taobao")
+                if requested == "auto" else requested)
+    if provider == "haina" and not haina_key:
+        print("Haina not configured: skip without replacing existing data.")
+        return 1 if smoke else 0
     if provider == "haojingke" and not hjk_key:
         print("HJK not configured: skip without replacing existing data.")
         return 1 if smoke else 0
@@ -105,9 +111,10 @@ def main() -> int:
         targets = [item for item in targets if item["modelKey"] == smoke_model]
         if len(targets) != 1:
             raise SystemExit("MARKET_SMOKE_MODEL_KEY must select one reviewed model")
+    cap_env = {"haina": "HAINA_MAX_TARGETS", "haojingke": "HJK_MAX_TARGETS",
+               "taobao": "TBK_MAX_TARGETS"}
     target_cap = max(1, min(30, int(os.environ.get(
-        "HJK_MAX_TARGETS" if provider == "haojingke" else "TBK_MAX_TARGETS",
-        "4" if provider == "haojingke" else "12",
+        cap_env[provider], "4" if provider in {"haina", "haojingke"} else "12",
     ))))
     if smoke:
         target_cap = min(target_cap, 2)
@@ -124,7 +131,7 @@ def main() -> int:
     success = 0
     matched = 0
     for target in targets[:target_cap]:
-        sub_sources = platforms if provider == "haojingke" else ["taobao"]
+        sub_sources = platforms if provider == "haojingke" else [provider]
         for source in sub_sources:
             response = None
             try:
@@ -132,6 +139,9 @@ def main() -> int:
                     response = query_taobao(target, app_key, secret, adzone,
                                             datetime.now(timezone.utc))
                     offers = parse_taobao_response(response, target, now)
+                elif source == "haina":
+                    response = query_haina(target, haina_key)
+                    offers = parse_haina_response(response, target, now)
                 else:
                     response = query_haojingke(source, target, hjk_key)
                     offers = parse_haojingke_response(response, target, now, source)
@@ -148,6 +158,15 @@ def main() -> int:
                         title_hits = sum(isinstance(row, dict) and
                                          title_matches(row.get("goods_name", ""), target)
                                          for row in rows[:100])
+                    else:
+                        title_hits = 0
+                elif source == "haina" and isinstance(response.get("data"), dict):
+                    rows = response["data"].get("rows")
+                    if isinstance(rows, list):
+                        rows_count = str(len(rows))
+                        title_hits = sum(isinstance(row, dict) and
+                                         title_matches(row.get("title", ""), target)
+                                         for row in rows[:150])
                     else:
                         title_hits = 0
                 else:
@@ -185,6 +204,14 @@ def main() -> int:
         print("No exact-title matches; retain previous market.json", file=sys.stderr)
         return 1
 
+    if provider == "haina":
+        previous = None
+        if OUTPUT.is_file():
+            try:
+                previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                previous = None
+        record_daily_history(feed, now, previous)
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     temporary = OUTPUT.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(feed, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
