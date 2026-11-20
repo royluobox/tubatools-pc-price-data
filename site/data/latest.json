@@ -1,21 +1,22 @@
 {
  "schema": 1,
- "capturedAt": "2026-11-19T07:07:52Z",
- "historyCapturedAt": "2026-11-19T07:03:44Z",
+ "capturedAt": "2026-11-20T07:08:41Z",
+ "historyCapturedAt": "2026-11-20T07:08:41Z",
  "source": "VRAMGlass",
  "sourceUrl": "https://vramglass.com/",
  "market": "xianyu",
- "attribution": "数据来源：VRAMGlass（vramglass.com）闲鱼市场在售挂单统计，快照时间 2026-11-19 07:07。数据仅供个人参考，不构成交易建议；VRAMGlass 与图吧工具箱无隶属关系。",
+ "attribution": "数据来源：VRAMGlass（vramglass.com）闲鱼市场在售挂单统计，快照时间 2026-11-20 07:08。数据仅供个人参考，不构成交易建议；VRAMGlass 与图吧工具箱无隶属关系。",
  "models": [
   {
    "vramglassId": "rtx-5090",
    "modelKey": "vga|RTX5090",
    "name": "RTX 5090",
-   "price": 48000,
-   "low": 46000,
-   "high": 50100,
+   "price": 50000,
+   "low": 49000,
+   "high": 52000,
    "listingCount": 9,
-   "publishedAt": "2026-11-18T17:48:59.478Z",
+   "publishedAt": "2026-11-19T17:28:51.306Z",
+   "observedAt": "2026-11-19T17:28:51.306000Z",
    "historyDays": 365,
    "history": [
     {
@@ -321,6 +322,10 @@
     {
      "d": "2026-11-18",
      "median": 48000
+    },
+    {
+     "d": "2026-11-19",
+     "median": 50000
     }
    ]
   },
@@ -328,11 +333,12 @@
    "vramglassId": "rtx-5080",
    "modelKey": "vga|RTX5080",
    "name": "RTX 5080",
-   "price": 14700,
-   "low": 12700,
-   "high": 16804,
-   "listingCount": 22,
-   "publishedAt": "2026-11-18T17:48:59.478Z",
+   "price": 13850,
+   "low": 12789,
+   "high": 15100,
+   "listingCount": 20,
+   "publishedAt": "2026-11-19T17:28:51.306Z",
+   "observedAt": "2026-11-19T17:28:51.306000Z",
    "historyDays": 365,
    "history": [
     {
@@ -638,6 +644,10 @@
     {
      "d": "2026-11-18",
      "median": 14700
+    },
+    {
+     "d": "2026-11-19",
+     "median": 13850
     }
    ]
   },
@@ -645,11 +655,12 @@
    "vramglassId": "rtx-5070-ti",
    "modelKey": "vga|RTX5070TI",
    "name": "RTX 5070 Ti",
-   "price": 9200,
-   "low": 8840,
-   "high": 9675,
-   "listingCount": 19,
-   "publishedAt": "2026-11-18T17:48:59.478Z",
+   "price": 9677,
+   "low": 9017,
+   "high": 10500,
+   "listingCount": 20,
+   "publishedAt": "2026-11-19T17:28:51.306Z",
+   "observedAt": "2026-11-19T17:28:51.306000Z",
    "historyDays": 365,
    "history": [
     {
@@ -955,6 +966,10 @@
     {
      "d": "2026-11-18",
      "median": 9200
+    },
+    {
+     "d": "2026-11-19",
+     "median": 9677
     }
    ]
   },
@@ -962,11 +977,12 @@
    "vramglassId": "rtx-5070",
    "modelKey": "vga|RTX5070",
    "name": "RTX 5070",
-   "price": 6400,
-   "low": 6050,
-   "high": 6849,
-   "listingCount": 11,
-   "publishedAt": "2026-11-19T06:12:55.807Z",
+   "price": 6915,
+   "low": 6375,
+   "high": 7770,
+   "listingCount": 6,
+   "publishedAt": "2026-11-20T06:17:03.498Z",
+   "observedAt": "2026-11-20T06:17:03.498000Z",
    "historyDays": 365,
    "history": [
     {
@@ -1259,7 +1275,11 @@
     },
     {
      "d": "2026-11-19",
-     "median": 6400
+     "median": 6300
+    },
+    {
+     "d": "2026-11-20",
+     "median": 6915
     }
    ]
   },
@@ -1268,10 +1288,11 @@
    "modelKey": "vga|RTX5060TI",
    "name": "RTX 5060 Ti",
    "price": 4999,
-   "low": 4894,
-   "high": 5220,
-   "listingCount": 23,
-   "publishedAt": "2026-11-19T06:12:55.807Z",
+   "low": 4800,
+   "high": 5066,
+   "listingCount": 13,
+   "publishedAt": "2026-11-20T06:17:03.498Z",
+   "observedAt": "2026-11-20T06:17:03.498000Z",
    "historyDays": 365,
    "history": [
     {
@@ -1564,6 +1585,10 @@
     },
     {
      "d": "2026-11-19",
+     "median": 4925
+    },
+    {
+     "d": "2026-11-20",
      "median": 4999
     }
    ]
@@ -1572,11 +1597,12 @@
    "vramglassId": "rtx-5060",
    "modelKey": "vga|RTX5060",
    "name": "RTX 5060",
-   "price": 3100,
-   "low": 3091,
-   "high": 3283,
-   "listingCount": 10,
-   "publishedAt": "2026-11-19T06:12:55.807Z",
+   "price": 3000,
+   "low": 2994,
+   "high": 3169,
+   "listingCount": 8,
+   "publishedAt": "2026-11-20T06:17:03.498Z",
+   "observedAt": "2026-11-20T06:17:03.498000Z",
    "historyDays": 365,
    "history": [
     {
@@ -1621,7 +1647,11 @@
     },
     {
      "d": "2026-11-19",
-     "median": 3100
+     "median": 3099
+    },
+    {
+     "d": "2026-11-20",
+     "median": 3000
     }
    ]
   },
@@ -1629,11 +1659,12 @@
    "vramglassId": "rx-9070-xt",
    "modelKey": "vga|RX9070XT",
    "name": "RX 9070 XT",
-   "price": 5888,
-   "low": 5725,
-   "high": 6044,
-   "listingCount": 27,
-   "publishedAt": "2026-11-19T06:12:55.807Z",
+   "price": 5800,
+   "low": 5644,
+   "high": 6000,
+   "listingCount": 31,
+   "publishedAt": "2026-11-19T17:28:51.306Z",
+   "observedAt": "2026-11-19T17:28:51.306000Z",
    "historyDays": 365,
    "history": [
     {
@@ -1942,7 +1973,7 @@
     },
     {
      "d": "2026-11-19",
-     "median": 5888
+     "median": 5800
     }
    ]
   },
@@ -1950,11 +1981,12 @@
    "vramglassId": "rx-9060-xt-16gb",
    "modelKey": "vga|RX9060XT",
    "name": "RX 9060 XT",
-   "price": 3499,
-   "low": 3325,
-   "high": 3575,
-   "listingCount": 27,
-   "publishedAt": "2026-11-19T06:12:55.807Z",
+   "price": 3355,
+   "low": 3272,
+   "high": 3517,
+   "listingCount": 28,
+   "publishedAt": "2026-11-19T17:28:51.306Z",
+   "observedAt": "2026-11-19T17:28:51.306000Z",
    "historyDays": 365,
    "history": [
     {
@@ -1999,7 +2031,7 @@
     },
     {
      "d": "2026-11-19",
-     "median": 3499
+     "median": 3355
     }
    ]
   },
@@ -2007,11 +2039,12 @@
    "vramglassId": "rtx-4060",
    "modelKey": "vga|RTX4060",
    "name": "RTX 4060",
-   "price": 2400,
-   "low": 2350,
-   "high": 2599,
+   "price": 2450,
+   "low": 2380,
+   "high": 2472,
    "listingCount": 13,
-   "publishedAt": "2026-11-19T06:12:55.807Z",
+   "publishedAt": "2026-11-20T06:17:03.498Z",
+   "observedAt": "2026-11-20T06:17:03.498000Z",
    "historyDays": 365,
    "history": [
     {
@@ -2056,7 +2089,11 @@
     },
     {
      "d": "2026-11-19",
-     "median": 2400
+     "median": 2385
+    },
+    {
+     "d": "2026-11-20",
+     "median": 2450
     }
    ]
   }
