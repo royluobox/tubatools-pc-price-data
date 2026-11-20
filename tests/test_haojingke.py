@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from haojingke import (DOCUMENTED_ENDPOINTS, parse_haojingke_response,
                        query_haojingke)
+from fetch_market import safe_provider_failure_category
 from marketplace import build_feed
 
 TARGETS = json.loads((ROOT / "config" / "market-targets.json").read_text("utf-8"))
@@ -24,6 +25,17 @@ NOW = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
 
 
 class HaoJingKeTests(unittest.TestCase):
+    def test_private_error_diagnostics_only_emit_fixed_categories(self):
+        self.assertEqual(safe_provider_failure_category({
+            "status_code": 1, "data": "京东联盟未授权 key=FAKE_TEST_VALUE"
+        }), "authorization")
+        self.assertEqual(safe_provider_failure_category({
+            "status_code": 1, "message": "apiKey invalid FAKE_TEST_VALUE"
+        }), "credential")
+        self.assertEqual(safe_provider_failure_category({
+            "status_code": 1, "message": "FAKE_TEST_VALUE"
+        }), "unknown")
+
     def test_jd_uses_original_reference_not_conditional_coupon(self):
         payload = {"status_code": 200, "data": {"data": [
             {"goods_id": "123456789", "goods_name": "华硕 RTX 5070 12GB 显卡",
