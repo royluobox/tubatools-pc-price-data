@@ -16,12 +16,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check only API response field presence (3 requests, no values)
+      - name: Check documented-field projection behavior (1 request, no values)
         env:
           HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
         run: |
           python - <<'PY'
           import json
+          import re
           import os
           import time
           import urllib.request
@@ -38,9 +39,7 @@ jobs:
               "comment_cnt", "standard_month_sale_qty",
           )
           CASES = [
-              ("official_example_term", "iphone16"),
-              ("phone_control", "iPhone 16 Plus"),
-              ("cpu_target", "9800X3D"),
+              ("request_projection", "iphone16"),
           ]
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -55,6 +54,7 @@ jobs:
                       "product_query": term,
                       "request_from": "haina",
                       "question_id": "tubatools-history-schema-20261120-" + label,
+                      "fields": "title,page_price,price_tags,price_info_180_days",
                   }, ensure_ascii=False).encode("utf-8"),
                   headers={
                       "x-api-key": os.environ["HAINA_API_KEY"],
@@ -87,6 +87,10 @@ jobs:
                   if rows:
                       sizes = [len(r) for r in rows]
                       print(f"  total_row_key_counts: min={min(sizes)} max={max(sizes)}")
+                      candidate_keys = sorted({k for r in rows for k in r if isinstance(k, str) and re.search(r"(?i)(hist|180|trend|curve|price)", k)})
+                      print(f"  price_or_history_related_key_names={candidate_keys}")
+                      tag_dates = sum(bool(re.search(r"20\\d{2}-\\d{2}-\\d{2}", str(r.get("price_tags", "")))) for r in rows)
+                      print(f"  price_tags_with_iso_date_pattern={tag_dates}/{len(rows)}")
               except urllib.error.HTTPError as ex:
                   print(f"{label}: http={ex.code}; no response body logged")
               except Exception as ex:
