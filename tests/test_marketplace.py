@@ -91,11 +91,12 @@ class MarketplaceTests(unittest.TestCase):
 
     def test_no_keys_is_safe_and_does_not_create_market_file(self):
         env = {k: v for k, v in os.environ.items() if k not in
-               {"TBK_APP_KEY", "TBK_APP_SECRET", "TBK_ADZONE_ID"}}
+               {"TBK_APP_KEY", "TBK_APP_SECRET", "TBK_ADZONE_ID", "HJK_API_KEY",
+                "MARKET_SMOKE_TEST", "MARKET_PUBLISH_ENABLED"}}
         result = subprocess.run([sys.executable, str(ROOT / "scripts" / "fetch_market.py")],
                                 env=env, text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("not configured", result.stdout)
+        self.assertIn("not approved", result.stdout)
 
 
 if __name__ == "__main__":

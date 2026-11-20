@@ -1,32 +1,42 @@
-# 国内购物平台免费接口：申请与配置
+# 国内电商价格 API：免费申请及验证
 
-## 第一优先：淘宝联盟（淘宝、天猫）
+## 首选：蚂蚁星球（原好京客）京东/拼多多搜索
 
-官方文档：[淘宝客-推广者-物料搜索](https://developer.alibaba.com/docs/api.htm?apiId=35896)。该接口标为「开放平台免费 API」「不需要授权」，这里不需要的通常是**额外的用户 OAuth 授权**；仍须有开发者应用 AppKey/Secret 与推广位，并确认账号可调用。
+不是京东或拼多多的官方直接 API，而是**第三方导购商品数据接口**。服务方公开标注免费，并提供京东、拼多多关键词搜索和商品详情；不代表任意商品都有覆盖，也不保证免费额度永久不变。
 
-1. 到 [淘宝开放平台](https://open.taobao.com/) 和 [淘宝联盟](https://pub.alimama.com/) 注册登录，完成所要求的开发者和推广者资质流程。
-2. 创建合规用途的应用，核对方法 taobao.tbk.dg.material.optional 的访问权限。
-3. 取得应用 AppKey、AppSecret；创建推广位，取 adzone_id（官方文档为 mm_xxx_xxx_12345678 最后一段）。
-4. 在本仓库 Settings → Secrets and variables → Actions → New repository secret 添加：
-   - TBK_APP_KEY：应用 AppKey；
-   - TBK_APP_SECRET：应用 AppSecret；
-   - TBK_ADZONE_ID：推广位数字 ID。
-5. 确认 API 配额、商品公开展示、缓存和转分发政策；确认适用后手动运行 Actions → Update price feed。
-6. 查看 Actions 日志中的匹配数量和生成的 market.json；如 SKU 显示误匹配，在 config/market-targets.json 收紧规则。
+- [京东 API 说明](https://www.haojingke.com/open-api/jd)
+- [拼多多 API 说明](https://www.haojingke.com/open-api/pdd)
 
-**不要把密钥发送到聊天、Issue、PR 或提交记录。** API 失败仅输出异常类别，避免泄露请求签名和参数。
+1. 在服务方网站注册，找到「开放 API」/「申请 API Key」。**不要**将 Key 复制进插件 DLL、仓库源码、聊天、Issue 或 PR。
+2. 在**本数据仓库** Settings → Secrets and variables → Actions → New repository secret 创建 `HJK_API_KEY`。
+3. 手动运行 Actions → **Smoke test HaoJingKe API (no publication)**。仅查京东前 2 个型号，显示返回的精确匹配商品条数，**不会公开价格、写入 market.json 或消耗 VRAMGlass 额度**。
+4. 检查服务是否支持 HTTPS；服务方文档例子是 HTTP，代码故意只接受 HTTPS。**如 HTTPS 不可用，暂停接入，不要让 API Key 经明文网络传输。**
+5. 在正式使用前，向服务方确认：允许把 SKU 标价和对应时间**长期保存、通过 GitHub Pages 公开展示、向第三方图吧工具箱 CE 用户再分发**；明确免费额度、地域和调用频率限制。免费调用 API 不自动授予二次发布商品数据的权利。
+6. 只有确认权利后，才将 Actions **Repository variable** `MARKET_PUBLISH_ENABLED` 设为 `true`，再手动运行 Update price feed。未设置时定时任务完全跳过电商 API。
 
-## 后续平台接入
+初始每日预算：4 个型号 × 2 平台 × 每 8 小时一次 = **最多 24 次请求/天**，实际成功数可能更低。服务配额未核实，必要时在 workflow 中降低 `HJK_MAX_TARGETS`。
 
-| 来源 | 官方入口 | 状态 |
+### 字段解释（重要）
+
+| 平台 | 第三方接口字段 | 我们的处理 |
 | --- | --- | --- |
-| 京东联盟 | [union.jd.com](https://union.jd.com/) | 待账号/接口权限与响应契约确认后开发 |
-| 多多进宝 | [jinbao.pinduoduo.com](https://jinbao.pinduoduo.com/) | 待确认商品搜索权限与报价展示范围 |
-| 苏宁开放平台 | [open.suning.com](https://open.suning.com/) | 待申请接口与签名密钥 |
+| 京东 | `skuId`, `skuName`, `materiaUrl`, `wlPrice` | 校验 SKU 和 `item.jd.com` 链接；`wlPrice` 标记为原价参考 |
+| 京东 | `wlPrice_after` | 单独记录条件性券后参考值，不作为历史走势价格 |
+| 拼多多 | `goods_id`, `goods_name`, `materiaurl`, `price` | 校验 `goods_id` 在官方链接内一致；`price` 标记为原价参考 |
+| 拼多多 | `price_after` | 单独记录条件性券后参考值 |
 
-不使用来源不明的付费转发接口、不绕过反爬机制，也不保证所有平台永久免费。每家平台需独立限制配额、记录采样口径和时效，再写入统一 market.json。
+**原价参考不等于实际支付金额，更不是已成交价。** 不填充没有采集到的历史日期；不把独立平台、二手挂牌和 ZOL 参考价混成一条曲线。
 
-## 易混淆的问题
+## 备用：淘宝联盟官方 TOP API
 
-- VRAMGlass 免费额度只覆盖二手市场统计，不等于国内购物平台 API 额度。
-- 淘宝联盟的 zk_final_price 是导购物料价字段，**不保证与实际订单结算价一致**。插件会标注为公开促销标价，不称为成交价。
+官方文档：[淘宝客-推广者-物料搜索](https://developer.alibaba.com/docs/api.htm?apiId=35896)。接口标记免费且无需额外的用户授权，但创建应用、媒体备案、推广位和业务权限仍可能需要额外材料。PC 客户端备案要求上传软件 X.509 数字签名证书，不适合为了一个插件随意使用宿主程序的证书。
+
+如将来合法获得权限，可在 Secrets 中放入 `TBK_APP_KEY`、`TBK_APP_SECRET`、`TBK_ADZONE_ID`，将 `MARKET_PROVIDER` 设置为 `taobao`，并在确认展示/缓存条款后开启发布变量。
+
+## 关于真实性与安全
+
+- 无 API Key 或未取得再分发许可时，公开的 `market.json` **不会被生成**；插件仍可独立查看 VRAMGlass/ZOL。
+- 不能把第三方 API 返回值当成京东商城实时结算价，价格类型标记 `original-reference`。
+- 只发布 `jd.com` / `yangkeduo.com` 的匹配 SKU 及其参考价；不发布第三方原始响应。
+- API 密钥仅供 Actions 采集任务使用。生产查询会拒绝 HTTP 或重定向，日志只打印异常类型，不打印 Key 或响应体。
+- 真实 API 返回的 JSON 结构、权限、可用性和配额仍**待账号实测**；现有单元测试只使用文档字段模拟数据。

@@ -1,0 +1,25 @@
+name: Smoke test HaoJingKe API (no publication)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test at most 2 model queries, without publishing any prices
+        env:
+          HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
+          MARKET_PROVIDER: "haojingke"
+          MARKET_SMOKE_TEST: "true"
+          HJK_PLATFORMS: "jd"
+          HJK_MAX_TARGETS: "2"
+        run: python scripts/fetch_market.py

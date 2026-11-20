@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Opt-in, quota-aware official marketplace collector. Never scrapes shops.
+"""Opt-in, quota-aware marketplace collectors; never scrape shopping sites.
 
-Required GitHub Actions secrets: TBK_APP_KEY, TBK_APP_SECRET, TBK_ADZONE_ID.
-Without all three, skip safely and do not alter the published market.json.
+HJK_API_KEY enables the documented third-party JD/PDD product endpoints.
+TBK credentials remain available as a separate official API fallback.
+No live requests without explicit publication approval or smoke-test mode.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from haojingke import parse_haojingke_response, query_haojingke
 from marketplace import build_feed, parse_taobao_response, top_sign
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,38 +57,78 @@ def query_taobao(target: dict, app_key: str, secret: str,
 
 
 def main() -> int:
-    env_names = ("TBK_APP_KEY", "TBK_APP_SECRET", "TBK_ADZONE_ID")
-    app_key, secret, adzone = (os.environ.get(name, "").strip() for name in env_names)
-    if not all((app_key, secret, adzone)):
-        print("TBK not configured: skip retail feed without replacing existing data.")
+    smoke = os.environ.get("MARKET_SMOKE_TEST", "").lower() == "true"
+    approved = os.environ.get("MARKET_PUBLISH_ENABLED", "").lower() == "true"
+    if not approved and not smoke:
+        print("Market publication not approved: skip all third-party queries and writes.")
         return 0
-    if not (app_key.isdigit() and adzone.isdigit()):
+
+    hjk_key = os.environ.get("HJK_API_KEY", "").strip()
+    app_key, secret, adzone = (
+        os.environ.get(name, "").strip()
+        for name in ("TBK_APP_KEY", "TBK_APP_SECRET", "TBK_ADZONE_ID")
+    )
+    requested = os.environ.get("MARKET_PROVIDER", "auto").strip().lower()
+    if requested not in {"auto", "haojingke", "taobao"}:
+        raise SystemExit("MARKET_PROVIDER must be auto, haojingke or taobao")
+    provider = ("haojingke" if hjk_key else "taobao") if requested == "auto" else requested
+    if provider == "haojingke" and not hjk_key:
+        print("HJK not configured: skip without replacing existing data.")
+        return 1 if smoke else 0
+    if provider == "taobao" and not all((app_key, secret, adzone)):
+        print("TBK not configured: skip without replacing existing data.")
+        return 1 if smoke else 0
+    if provider == "taobao" and not (app_key.isdigit() and adzone.isdigit()):
         raise SystemExit("Invalid TBK public identifiers (AppKey and adzone should be numeric)")
 
     targets = json.loads(TARGETS.read_text(encoding="utf-8"))
     if not isinstance(targets, list) or not targets:
         raise SystemExit("No reviewed marketplace model targets")
-    target_cap = max(1, min(30, int(os.environ.get("TBK_MAX_TARGETS", "12"))))
-    pause = max(1.0, min(15.0, float(os.environ.get("TBK_PAUSE_SECONDS", "2"))))
+    target_cap = max(1, min(30, int(os.environ.get(
+        "HJK_MAX_TARGETS" if provider == "haojingke" else "TBK_MAX_TARGETS",
+        "4" if provider == "haojingke" else "12",
+    ))))
+    if smoke:
+        target_cap = min(target_cap, 2)
+    pause = max(1.0, min(15.0, float(os.environ.get("MARKET_PAUSE_SECONDS", "2"))))
+    platforms = [x.strip() for x in os.environ.get("HJK_PLATFORMS", "jd,pdd").split(",")]
+    if provider == "haojingke" and (not platforms or len(platforms) != len(set(platforms)) or
+                                   any(x not in {"jd", "pdd"} for x in platforms)):
+        raise SystemExit("HJK_PLATFORMS must list unique jd/pdd identifiers")
 
     # The paid/available quota may differ by account. Cap requests at one
     # search per reviewed target and stop rather than blind retry.
     now = datetime.now(timezone.utc)
     observations: dict[str, list[dict]] = {}
     success = 0
+    matched = 0
     for target in targets[:target_cap]:
-        try:
-            response = query_taobao(target, app_key, secret, adzone, datetime.now(timezone.utc))
-            offers = parse_taobao_response(response, target, now)
-            observations[target["modelKey"]] = offers
-            success += 1
-            print(f"{target['modelKey']}: {len(offers)} verified public product offers")
-        except Exception as exc:
-            # Never dump request parameters, signatures or credentials.
-            print(f"{target['modelKey']}: official API failed: {type(exc).__name__}", file=sys.stderr)
-        time.sleep(pause)
+        sub_sources = platforms if provider == "haojingke" else ["taobao"]
+        for source in sub_sources:
+            try:
+                if source == "taobao":
+                    response = query_taobao(target, app_key, secret, adzone,
+                                            datetime.now(timezone.utc))
+                    offers = parse_taobao_response(response, target, now)
+                else:
+                    response = query_haojingke(source, target, hjk_key)
+                    offers = parse_haojingke_response(response, target, now, source)
+                observations.setdefault(target["modelKey"], []).extend(offers)
+                success += 1
+                matched += len(offers)
+                print(f"{target['modelKey']}/{source}: {len(offers)} strictly matched offers")
+            except Exception as exc:
+                # Never log request URL, query text, credentials or response bodies.
+                print(f"{target['modelKey']}/{source}: request failed: {type(exc).__name__}",
+                      file=sys.stderr)
+            time.sleep(pause)
 
-    feed = build_feed(observations, targets[:target_cap], now)
+    if smoke:
+        print(f"Smoke test only: {success} accepted responses, {matched} exact SKU matches;"
+              " no snapshot written.")
+        return 0 if success and matched else 1
+
+    feed = build_feed(observations, targets[:target_cap], now, provider=provider)
     if not success:
         print("No API queries succeeded; retain previous market.json", file=sys.stderr)
         return 1
