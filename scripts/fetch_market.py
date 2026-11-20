@@ -84,6 +84,11 @@ def main() -> int:
     targets = json.loads(TARGETS.read_text(encoding="utf-8"))
     if not isinstance(targets, list) or not targets:
         raise SystemExit("No reviewed marketplace model targets")
+    smoke_model = os.environ.get("MARKET_SMOKE_MODEL_KEY", "").strip() if smoke else ""
+    if smoke_model:
+        targets = [item for item in targets if item["modelKey"] == smoke_model]
+        if len(targets) != 1:
+            raise SystemExit("MARKET_SMOKE_MODEL_KEY must select one reviewed model")
     target_cap = max(1, min(30, int(os.environ.get(
         "HJK_MAX_TARGETS" if provider == "haojingke" else "TBK_MAX_TARGETS",
         "4" if provider == "haojingke" else "12",
