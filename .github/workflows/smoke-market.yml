@@ -2,12 +2,17 @@ name: Smoke test HaoJingKe API (no publication)
 
 on:
   workflow_dispatch:
+  # One-off run on this draft PR branch, opt in with the commit message.
+  push:
+    branches: ["codex/authorized-market-feed-v3"]
+    paths: [".github/workflows/smoke-market.yml"]
 
 permissions:
   contents: read
 
 jobs:
   verify-api:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[smoke-hjk]')
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -15,11 +20,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Test at most 2 model queries, without publishing any prices
+      - name: Test one RTX 5070 search per platform, without publishing prices
         env:
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
           MARKET_PROVIDER: "haojingke"
           MARKET_SMOKE_TEST: "true"
-          HJK_PLATFORMS: "jd"
-          HJK_MAX_TARGETS: "2"
-        run: python scripts/fetch_market.py
+          MARKET_SMOKE_MODEL_KEY: "vga|RTX5070"
+          HJK_PLATFORMS: "jd,pdd"
+          HJK_MAX_TARGETS: "1"
+        run: |
+          if [ -z "$HJK_API_KEY" ]; then
+            echo "::error::HJK_API_KEY is unavailable to this workflow"
+            exit 1
+          fi
+          python scripts/fetch_market.py
