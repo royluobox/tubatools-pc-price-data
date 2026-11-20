@@ -1,0 +1,132 @@
+name: Smoke test Haina hardware price coverage (no publication)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["codex/haina-api-coverage-smoke"]
+    paths: [".github/workflows/smoke-haina.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check Haina product, SKU and discount APIs without printing offers
+        env:
+          HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
+        run: |
+          if [ -z "$HAINA_API_KEY" ]; then
+            echo "::error::HAINA_API_KEY is missing. Create it in this repository's Actions Secrets."
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import time
+          import urllib.error
+          import urllib.request
+          from decimal import Decimal, InvalidOperation
+
+          ENDPOINTS = {
+              "product": "https://gw-openapi.zhidemai.com/product/v1",
+              "sku": "https://gw-openapi.zhidemai.com/kg_sku/api/v1/search",
+              "deal": "https://gw-openapi.zhidemai.com/hj-search/discount/v2",
+          }
+          CASES = [
+              ("gpu", "product", {"product_query": "RTX 5070 显卡", "request_from": "haina", "question_id": "tubatools-coverage-gpu"}),
+              ("cpu", "product", {"product_query": "AMD Ryzen 7 9800X3D CPU", "request_from": "haina", "question_id": "tubatools-coverage-cpu"}),
+              ("sku", "sku", {"query": "AMD Ryzen 7 9800X3D"}),
+              ("deal", "deal", {"product_query": "RTX 5070 显卡", "request_from": "haina", "question_id": "tubatools-coverage-deal", "size": 5}),
+          ]
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise ValueError("redirect blocked")
+
+          def price_ok(raw):
+              try:
+                  d = Decimal(str(raw))
+                  return d.is_finite() and 1 <= d < 500000
+              except (ValueError, InvalidOperation, TypeError):
+                  return False
+
+          def count_history(raw):
+              if isinstance(raw, str):
+                  try:
+                      raw = json.loads(raw)
+                  except (ValueError, TypeError):
+                      return 0
+              if not isinstance(raw, list):
+                  return 0
+              return sum(1 for point in raw[:2000]
+                         if isinstance(point, list) and len(point) >= 3
+                         and isinstance(point[0], str)
+                         and (price_ok(point[1]) or price_ok(point[2])))
+
+          def target_match(text, label):
+              title = str(text or "").upper()
+              if label == "gpu":
+                  return bool(re.search(r"RTX[ -]*5070(?![A-Z0-9])", title)) and not bool(re.search(r"5070[ -]*TI", title))
+              if label == "cpu":
+                  return bool(re.search(r"9800X3D(?![A-Z0-9])", title))
+              return False
+
+          opener = urllib.request.build_opener(NoRedirect())
+          for label, kind, payload in CASES:
+              endpoint = ENDPOINTS[kind]
+              request = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                  headers={"x-api-key": os.environ["HAINA_API_KEY"],
+                           "Content-Type": "application/json",
+                           "Accept": "application/json",
+                           "User-Agent": "TubatoolsPriceFeed-CoverageTest/1.0"},
+                  method="POST",
+              )
+              try:
+                  with opener.open(request, timeout=35) as response:
+                      status = response.status
+                      if response.geturl() != endpoint:
+                          raise ValueError("unexpected URL")
+                      raw = response.read(8_000_001)
+                  if len(raw) > 8_000_000:
+                      raise ValueError("oversized response")
+                  obj = json.loads(raw)
+                  if not isinstance(obj, dict):
+                      raise ValueError("not JSON object")
+                  code = obj.get("error_code")
+                  code = code if isinstance(code, int) and -100000 < code < 100000 else "unknown"
+                  if kind in ("product", "deal"):
+                      data = obj.get("data")
+                      rows = data.get("rows", []) if isinstance(data, dict) else []
+                      rows = rows if isinstance(rows, list) else []
+                      matches = [r for r in rows if isinstance(r, dict) and target_match(r.get("title"), label if kind == "product" else "gpu")]
+                      priced = [r for r in matches if price_ok(r.get("page_price"))]
+                      historical = sum(count_history(r.get("price_info_180_days")) for r in matches[:30])
+                      malls = len({str(r.get("mall_name")) for r in priced if r.get("mall_name")})
+                      print(f"{label}: http={status}, error_code={code}, total_rows={len(rows)}, "
+                            f"exact_title_matches={len(matches)}, page_price_hits={len(priced)}, "
+                            f"distinct_malls={malls}, history_points={historical}")
+                  else:
+                      hits = obj.get("search_result", [])
+                      hits = hits if isinstance(hits, list) else []
+                      matched = [r for r in hits if isinstance(r, dict) and "9800X3D" in str(r.get("entity_name", "")).upper()]
+                      sku_count = sum(min(10000, int(r.get("sku_result", {}).get("sku_count") or 0))
+                                      for r in matched if isinstance(r.get("sku_result"), dict))
+                      print(f"sku: http={status}, success={obj.get('success') is True}, "
+                            f"entities={len(hits)}, exact_model_entities={len(matched)}, "
+                            f"reported_sku_count={sku_count}")
+              except urllib.error.HTTPError as exc:
+                  print(f"{label}: http={exc.code}, no_payload_logged")
+              except Exception as exc:
+                  print(f"{label}: request_or_schema_error={type(exc).__name__}")
+              time.sleep(1)
+          print("No API key, raw API payload, product title, retail price or snapshot has been logged or published.")
+          PY
