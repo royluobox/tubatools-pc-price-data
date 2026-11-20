@@ -110,6 +110,7 @@ def main() -> int:
     for target in targets[:target_cap]:
         sub_sources = platforms if provider == "haojingke" else ["taobao"]
         for source in sub_sources:
+            response = None
             try:
                 if source == "taobao":
                     response = query_taobao(target, app_key, secret, adzone,
@@ -124,7 +125,18 @@ def main() -> int:
                 print(f"{target['modelKey']}/{source}: {len(offers)} strictly matched offers")
             except Exception as exc:
                 # Never log request URL, query text, credentials or response bodies.
-                print(f"{target['modelKey']}/{source}: request failed: {type(exc).__name__}",
+                detail = type(exc).__name__
+                if source in {"jd", "pdd"} and isinstance(response, dict):
+                    status = response.get("status_code")
+                    status_label = (str(status) if str(status).isdigit() and
+                                    len(str(status)) <= 5 else "missing-or-nonnumeric")
+                    data = response.get("data")
+                    detail += f" (status={status_label}, data_type={type(data).__name__})"
+                    if isinstance(data, dict):
+                        # Only fixed schema names: never echo arbitrary API content.
+                        known = ("goods_list", "list", "data", "goods_search_response")
+                        detail += ", known_fields=" + ",".join(k for k in known if k in data)
+                print(f"{target['modelKey']}/{source}: request failed: {detail}",
                       file=sys.stderr)
             time.sleep(pause)
 
