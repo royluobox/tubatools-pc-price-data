@@ -10,8 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import urllib.request
-from datetime import datetime
-from urllib.parse import urlsplit
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from marketplace import cny_cents, official_link, title_matches, _iso
 
@@ -99,3 +99,42 @@ def parse_haina_response(payload: dict, target: dict, observed_at: datetime) -> 
         })
     unique = {(offer["platform"], offer["skuId"]): offer for offer in offers}
     return sorted(unique.values(), key=lambda x: (x["priceCents"], x["skuId"]))[:48]
+
+
+def record_daily_history(feed: dict, captured_at: datetime, previous: dict | None = None) -> dict:
+    """Accumulate only dates actually sampled; do not backfill missing days.
+
+    The published chart uses one measured daily median (the last collection
+    that day, in China time). We never import fabricated or other-provider
+    history. This begins on the first authorized collection date.
+    """
+    if captured_at.tzinfo is None:
+        raise ValueError("Captured time must be timezone aware")
+    if feed.get("sourceUrl") != "https://ai.zhidemai.com/haina-platform/product_search_pro":
+        raise ValueError("Not a Haina market feed")
+    past = {}
+    if isinstance(previous, dict) and previous.get("sourceUrl") == feed["sourceUrl"]:
+        past = {row.get("modelKey"): row for row in previous.get("models", [])
+                if isinstance(row, dict)}
+    today = captured_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
+    earliest = today - timedelta(days=364)
+    for model in feed.get("models", []):
+        samples: dict[str, int] = {}
+        for point in past.get(model["modelKey"], {}).get("history", []) or []:
+            if not isinstance(point, dict):
+                continue
+            day = point.get("d")
+            median = point.get("median")
+            if not isinstance(day, str) or type(median) is not int:
+                continue
+            try:
+                parsed = datetime.strptime(day, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if earliest <= parsed < today and 0 < median < 500000:
+                samples[day] = median
+        samples[today.isoformat()] = model["price"]
+        model["history"] = [{"d": day, "median": samples[day]}
+                            for day in sorted(samples)]
+        model["historyDays"] = len(samples)
+    return feed
