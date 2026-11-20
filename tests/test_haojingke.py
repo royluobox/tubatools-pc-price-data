@@ -78,6 +78,17 @@ class HaoJingKeTests(unittest.TestCase):
         self.assertEqual(offers[0]["url"],
                          "https://mobile.yangkeduo.com/goods.html?goods_id=123456")
 
+    def test_jd_zero_results_do_not_invent_a_price(self):
+        # Observed from a live authorized JD goodslist search on 2026-11-20.
+        empty = {"status_code": 200,
+                 "data": {"data": "", "total": 0, "brand": ""}}
+        self.assertEqual(parse_haojingke_response(empty, GPU, NOW, "jd"), [])
+
+        # A nonempty declared result must not be silently discarded.
+        corrupt = {"status_code": 200, "data": {"data": "", "total": 1}}
+        with self.assertRaises(ValueError):
+            parse_haojingke_response(corrupt, GPU, NOW, "jd")
+
     def test_invalid_provider_responses_fail_closed(self):
         for payload in ({"status_code": 403, "data": {}},
                         {"status_code": 200, "data": None},
