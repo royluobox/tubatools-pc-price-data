@@ -19,12 +19,28 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from haojingke import parse_haojingke_response, query_haojingke
-from marketplace import build_feed, parse_taobao_response, top_sign
+from marketplace import build_feed, parse_taobao_response, title_matches, top_sign
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ROOT / "config" / "market-targets.json"
 OUTPUT = ROOT / "site" / "data" / "market.json"
 TOP_ENDPOINT = "https://eco.taobao.com/router/rest"
+
+
+def safe_provider_failure_category(payload: dict) -> str:
+    """Classify third-party errors without logging response text or credentials."""
+    message = " ".join(str(payload.get(name) or "") for name in ("message", "data")).lower()
+    categories = (
+        ("authorization", ("授权", "未开通", "未绑定", "京东联盟", "permission")),
+        ("credential", ("apikey", "api key", "密钥", "秘钥", "invalid key")),
+        ("quota", ("限流", "频率", "次数", "quota", "too many")),
+        ("parameters", ("参数", "缺少", "参数错误", "parameter")),
+        ("unavailable", ("维护", "关闭", "停用", "下线", "unavailable")),
+    )
+    for name, indicators in categories:
+        if any(word in message for word in indicators):
+            return name
+    return "unknown"
 
 
 def query_taobao(target: dict, app_key: str, secret: str,
@@ -127,8 +143,15 @@ def main() -> int:
                     rows = response["data"].get("data" if source == "jd" else "goods_list")
                     if isinstance(rows, list):
                         rows_count = str(len(rows))
+                        title_hits = sum(isinstance(row, dict) and
+                                         title_matches(row.get("goods_name", ""), target)
+                                         for row in rows[:100])
+                    else:
+                        title_hits = 0
+                else:
+                    title_hits = 0
                 print(f"{target['modelKey']}/{source}: {rows_count} returned rows, "
-                      f"{len(offers)} strictly matched offers")
+                      f"{title_hits} matching titles, {len(offers)} verified offers")
             except Exception as exc:
                 # Never log request URL, query text, credentials or response bodies.
                 detail = type(exc).__name__
@@ -142,6 +165,7 @@ def main() -> int:
                         # Only fixed schema names: never echo arbitrary API content.
                         known = ("goods_list", "list", "data", "goods_search_response")
                         detail += ", known_fields=" + ",".join(k for k in known if k in data)
+                    detail += ", category=" + safe_provider_failure_category(response)
                 print(f"{target['modelKey']}/{source}: request failed: {detail}",
                       file=sys.stderr)
             time.sleep(pause)
