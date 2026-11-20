@@ -45,9 +45,11 @@ jobs:
           TREND_MODELS: "80"
         run: dotnet run --project scripts/zol-feed -c Release
 
-      - name: Fetch approved JD/PDD marketplace references (optional)
+      - name: Fetch approved marketplace listings (optional; publication gated)
         continue-on-error: true
         env:
+          HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
+          HAINA_MAX_TARGETS: "4"
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
           HJK_MAX_TARGETS: "4"
           HJK_PLATFORMS: "jd,pdd"

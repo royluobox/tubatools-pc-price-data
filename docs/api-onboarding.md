@@ -1,5 +1,36 @@
 # 国内电商价格 API：免费申请及验证
 
+## 首选：什么值得买「海纳」商品检索（2026-11-20 联机验证）
+
+官方开放平台：[海纳开发者工作台](https://ai.zhidemai.com/haina-platform)。
+优先使用 [商品检索 Pro](https://ai.zhidemai.com/haina-platform/product_search_pro)
+获取页面标价、平台、店铺和商品链接，用[商品 SKU 信息](https://ai.zhidemai.com/haina-platform/product_sku_info)
+辅助型号消歧；[好价检索 Pro](https://ai.zhidemai.com/haina-platform/discount_search_pro)
+只用于独立的优惠信息，不与普通页面标价混合计算历史曲线。
+
+- GitHub Actions Secret 名称：`HAINA_API_KEY`。不得复制 Key 到源码、Issue、聊天或日志。
+- 离线集成使用 `MARKET_PROVIDER=haina` 或自动选择优先级（有 Haina Key 时优先）。
+  同一目标至多一次搜索，不追逐空结果无限重试；CPU 等目标可用经过验证的简短 `hainaQuery`。
+- **两轮已成功的 API 冒烟测试：** [首轮](https://github.com/royluobox/tubatools-pc-price-data/actions/runs/44710975219)：
+  RTX 5070 商品搜索返回 20 条，17 条精确型号与页面价格字段匹配；
+  独立好价搜索 5/5 条命中；9800X3D 商品搜索在较长英文查询下为 0；
+  SKU 归一接口返回 3 个相关实体，其 `sku_count` 合计 57（不代表 57 个可购买独立 SKU）。
+- [第二轮查询词复核](https://github.com/royluobox/tubatools-pc-price-data/actions/runs/44711196906)：
+  9800X3D 简短词 7/7 条精确匹配且有页面价格；中文词 9/10；
+  RTX 5060 Ti 16GB 为 7/10；iPhone 16 Plus 对照组 4/4。
+  这些是标题/价格字段计数，真正进入插件前还必须通过官方链接、安全 URL、价格范围与重复项校验。
+- **采集器端到端实测：** [隔离工作流 #3](https://github.com/royluobox/tubatools-pc-price-data/actions/runs/44711978725)
+  额外实测 RTX 5070 返回 15 行、13 行严格型号匹配，13 条通过正式适配器的官方商品 URL、币值和来源校验。
+  这里是 **13 个可追溯商品链接记录**，并非已解析的京东真实 SKU 编号，也不等于 13 个独立商家。
+  工作流未写文件，更未部署公开价格。
+- **历史价格限制：** 官方接口示例列有 `price_info_180_days`，但以上实时返回的 CPU、显卡及对照手机
+  均没有该字段。因此不能声称已经取得 180 天历史，也不能人工回填；
+  未来若允许保存，`history` 只能从授权启用之日按日采样真实观测点累积，允许空缺日期。
+- **公开再分发权尚未确认：** 测试 Key 免费不自动代表长期免费、不代表可以在公开 GitHub Pages
+  或图吧工具箱 CE 插件中缓存、再发布历史行情。咨询平台确认长期额度、调用频率、
+  具体字段的存储/展示/保留时长与署名要求之前，**保持 `MARKET_PUBLISH_ENABLED` 关闭**。
+  独立冒烟工作流只在隔离测试分支使用，绝不保存原始响应或产品价格。
+
 ## 首选：蚂蚁星球（原好京客）京东/拼多多搜索
 
 不是京东或拼多多的官方直接 API，而是**第三方导购商品数据接口**。服务方公开标注免费，并提供京东、拼多多关键词搜索和商品详情；不代表任意商品都有覆盖，也不保证免费额度永久不变。
