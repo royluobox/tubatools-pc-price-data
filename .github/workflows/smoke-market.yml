@@ -1,4 +1,4 @@
-name: Smoke test HaoJingKe JD detail (no publication)
+name: Smoke test HaoJingKe JD pool (no publication)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Probe documented JD detail on two known SKUs without storing results
+      - name: Distinguish empty affiliate pool from missing hardware coverage
         env:
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
         run: |
@@ -35,20 +35,48 @@ jobs:
           import urllib.request
           from pathlib import Path
 
-          # Documented HJK goodsdetail API uses goods_id (singular).
-          endpoint = "https://api-gw.haojingke.com/index.php/v1/api/jd/goodsdetail"
+          from urllib.error import HTTPError
+          endpoints = {
+              "list": "https://api-gw.haojingke.com/index.php/v1/api/jd/goodslist",
+              "detail": "https://api-gw.haojingke.com/index.php/v1/api/jd/goodsdetail",
+          }
           cases = [
-              ("Ryzen 7 9800X3D", "100147630258", "9800X3D"),
-              ("RTX 5070", "10154190683550", "5070"),
+              ("No filter, default coupon", "list", {"pageindex": "1", "pagesize": "10"}),
+              ("No filter, coupon off", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0"}),
+              ("Common phone keyword", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0", "keyword": "手机"}),
+              ("Broad AMD keyword", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0", "keyword": "AMD"}),
+              ("Short GPU keyword", "list", {"pageindex": "1", "pagesize": "10", "iscoupon": "0", "keyword": "5070"}),
+              ("Known CPU detail", "detail", {"goods_id": "100147630258"}),
+              ("Official-doc sample detail", "detail", {"goods_id": "66982790389"}),
           ]
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, req, fp, code, msg, headers, newurl):
                   raise ValueError("redirect refused")
 
+          def safe_code(value):
+              code = str(value).strip()
+              return code if code.isascii() and code.isdigit() and len(code) <= 8 else "n/a"
+
+          def safe_reason(payload):
+              message = str(payload.get("message") or payload.get("msg") or "")[:600]
+              categories = {
+                  "authorization": ("未授权", "授权", "权限", "登录", "认证", "签约"),
+                  "account": ("账号", "账户", "京盟", "联盟", "appkey", "appsecret", "appid"),
+                  "missing_product": ("商品不存在", "商品未找到", "没有找到", "无此商品", "不存在"),
+                  "rate_limit": ("限流", "频繁", "次数", "超限", "quota", "rate limit"),
+                  "parameter": ("参数", "缺少", "格式错误"),
+                  "service": ("系统", "服务器", "稍后", "异常", "失败"),
+              }
+              labels = [category for category, patterns in categories.items()
+                        if any(pattern.lower() in message.lower() for pattern in patterns)]
+              return "+".join(labels) if labels else ("present-unclassified" if message else "no-message")
+
           opener = urllib.request.build_opener(NoRedirect())
-          for label, sku, expected_model in cases:
-              form = {"apikey": os.environ["HJK_API_KEY"], "goods_id": sku}
+          for label, endpoint_type, params in cases:
+              endpoint = endpoints[endpoint_type]
+              form = {"apikey": os.environ["HJK_API_KEY"]}
+              form.update(params)
               request = urllib.request.Request(
                   endpoint,
                   data=urllib.parse.urlencode(form).encode("utf-8"),
@@ -64,30 +92,27 @@ jobs:
                       raise ValueError("oversized response")
                   payload = json.loads(raw)
                   if not isinstance(payload, dict):
-                      raise ValueError("not a JSON object")
-                  original_status = payload.get("status_code")
-                  candidate = str(original_status).strip()
-                  status = candidate if candidate.isascii() and candidate.isdigit() and len(candidate) <= 3 else "other"
-                  present_fields = sorted(k for k in ("status_code", "status", "code", "data", "message", "msg", "error_code") if k in payload)
-                  data_shape = type(payload.get("data")).__name__
-                  print(f"{label} envelope: status={status}, status_type={type(original_status).__name__}, "
-                        f"fields={','.join(present_fields)}, data_type={data_shape}")
-                  details = payload.get("data")
-                  if isinstance(details, list):
-                      details = details[0] if details and isinstance(details[0], dict) else None
-                  elif isinstance(details, dict) and isinstance(details.get("data"), dict):
-                      details = details["data"]
-                  available = isinstance(details, dict) and bool(details)
-                  returned_sku = str(details.get("goods_id", "")) if available else ""
-                  title = str(details.get("goods_name", "")) if available else ""
-                  exact_id = bool(returned_sku and returned_sku == sku)
-                  title_found = bool(expected_model in title.upper())
-                  price_present = bool(available and details.get("price") not in (None, ""))
-                  print(f"{label} detail: status={status}, has_detail={available}, "
-                        f"sku_match={exact_id}, model_in_title={title_found}, "
-                        f"has_price_field={price_present}")
+                      raise ValueError("not JSON object")
+                  status = safe_code(payload.get("status_code"))
+                  reason = safe_reason(payload)
+                  data = payload.get("data")
+                  if endpoint_type == "list":
+                      rows = data.get("data") if isinstance(data, dict) else None
+                      total = data.get("total") if isinstance(data, dict) else None
+                      row_count = len(rows) if isinstance(rows, list) else (
+                          0 if rows in ("", [], None) else "non-list")
+                      safe_total = total if isinstance(total, int) and 0 <= total <= 1000000 else "unknown"
+                      print(f"{label}: status={status}, total={safe_total}, rows={row_count}, "
+                            f"data_shape={type(data).__name__}, reason={reason}")
+                  else:
+                      details = data if isinstance(data, dict) else None
+                      found = isinstance(details, dict) and bool(details.get("goods_id"))
+                      print(f"{label}: status={status}, detail_found={found}, "
+                            f"data_shape={type(data).__name__}, reason={reason}")
+              except HTTPError as error:
+                  print(f"{label}: http_status={safe_code(error.code)}")
               except Exception as error:
-                  print(f"{label} detail: transport/schema error type={type(error).__name__}")
+                  print(f"{label}: transport_or_schema={type(error).__name__}")
               time.sleep(2)
-          print("No price values, API credentials, or snapshots were logged or published.")
+          print("No prices, identifiers from API payloads, messages, keys, or snapshots were published.")
           PY
