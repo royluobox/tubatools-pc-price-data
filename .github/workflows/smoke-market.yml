@@ -48,11 +48,19 @@ jobs:
               if isinstance(value, list):
                   return {"type": "list", "length": len(value),
                           "first_schema": schema(value[0], depth + 1) if value else None}
+              if isinstance(value, str):
+                  try:
+                      decoded = json.loads(value)
+                  except (ValueError, TypeError):
+                      return {"type": "str", "length": len(value), "json": False}
+                  return {"type": "json-string", "length": len(value),
+                          "decoded_schema": schema(decoded, depth + 1)}
               return type(value).__name__
 
           try:
               payload = query_haojingke("jd", {"query": "RTX 5070"}, os.environ["HJK_API_KEY"])
               print("JD RESPONSE SHAPE ONLY:", json.dumps(schema(payload), ensure_ascii=False))
+              print("JD reported total:", payload.get("data", {}).get("total") if isinstance(payload.get("data"), dict) else "unknown")
           except Exception as error:
               print("JD probe failure type:", type(error).__name__)
               raise SystemExit(1)
