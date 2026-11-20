@@ -201,6 +201,11 @@ def build_feed(observations: dict[str, list[dict]], targets: list[dict],
             "蚂蚁星球（原好京客）第三方 API 的京东/拼多多商品原价参考，"
             "不是实时结算价或已验证券后价。",
         ),
+        "haina": (
+            "https://ai.zhidemai.com/haina-platform/product_search_pro",
+            "值得买海纳 API 的商城商品页面标价；链接是来源商品记录，"
+            "不保证是商家原始 SKU，亦不代表收银台实际结算价。",
+        ),
     }
     if provider not in sources:
         raise ValueError("Unsupported marketplace provider")
