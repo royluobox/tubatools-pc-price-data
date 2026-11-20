@@ -1,32 +1,55 @@
 name: Smoke test HaoJingKe API (no publication)
 
+# Manual diagnostic only. No scheduled or push-triggered requests.
 on:
   workflow_dispatch:
-  # One-off diagnostics: report only status, error category and matched counts.
-  push:
-    branches: ["codex/authorized-market-feed-v3"]
-    paths: [".github/workflows/smoke-market.yml"]
+    inputs:
+      model_key:
+        description: "Reviewed model to search (one SKU family per run)"
+        required: true
+        type: choice
+        default: "vga|RTX5070"
+        options:
+          - "vga|RTX5070"
+          - "vga|RTX5060"
+          - "vga|RTX5080"
+          - "vga|RX9070XT"
+          - "cpu|I514600KF"
+          - "cpu|RYZEN79800X3D"
+          - "cpu|RYZEN59600X"
+      platforms:
+        description: "Sources (at most two queries)"
+        required: true
+        type: choice
+        default: "jd,pdd"
+        options:
+          - "jd,pdd"
+          - "jd"
+          - "pdd"
 
 permissions:
   contents: read
 
+concurrency:
+  group: manual-hjk-smoke
+  cancel-in-progress: false
+
 jobs:
   verify-api:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[smoke-hjk]')
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Test one RTX 5070 search per platform, without publishing prices
+      - name: Test one reviewed model, without publishing prices or secrets
         env:
           HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
           MARKET_PROVIDER: "haojingke"
           MARKET_SMOKE_TEST: "true"
-          MARKET_SMOKE_MODEL_KEY: "vga|RTX5070"
-          HJK_PLATFORMS: "jd,pdd"
+          MARKET_SMOKE_MODEL_KEY: ${{ inputs.model_key }}
+          HJK_PLATFORMS: ${{ inputs.platforms }}
           HJK_MAX_TARGETS: "1"
         run: |
           if [ -z "$HJK_API_KEY" ]; then
