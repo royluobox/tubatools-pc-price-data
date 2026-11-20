@@ -1,4 +1,4 @@
-name: Diagnose Haina alternate history structures (no publication)
+name: Diagnose Haina dated-offer history depth (no publication)
 
 on:
   push:
@@ -16,120 +16,102 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check product tags, nested SKU fields and dated deals without values
+      - name: Measure deal-event age buckets and capacity without logging prices
         env:
           HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
         run: |
           python - <<'PY'
+          from collections import Counter
+          from datetime import datetime, timezone
           import json
           import os
           import re
-          import time
           import urllib.error
           import urllib.request
 
-          key = os.environ.get("HAINA_API_KEY")
-          if not key:
-              raise SystemExit("HAINA_API_KEY secret unavailable")
+          secret = os.environ.get("HAINA_API_KEY")
+          if not secret:
+              raise SystemExit("HAINA_API_KEY missing")
 
-          cases = [
-              ("product_tags", "https://gw-openapi.zhidemai.com/product/v1", {
-                  "product_query": "iphone16", "request_from": "haina",
-                  "question_id": "tubatools-alt-history-product-20261120",
-              }),
-              ("sku_nested", "https://gw-openapi.zhidemai.com/kg_sku/api/v1/search", {
-                  "query": "9800X3D",
-              }),
-              ("deal_dates", "https://gw-openapi.zhidemai.com/hj-search/discount/v2", {
-                  "product_query": "RTX 5070 显卡", "request_from": "haina",
-                  "question_id": "tubatools-alt-history-deal-20261120",
-              }),
-          ]
-          candidate = re.compile(r"(price|hist|180|trend|curve|date|time|sale|coupon|discount)", re.I)
-          safe_name = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,49}$")
-
+          endpoint = "https://gw-openapi.zhidemai.com/hj-search/discount/v2"
+          body = {
+              "product_query": "RTX 5070 显卡",
+              "request_from": "haina",
+              "question_id": "tubatools-history-depth-20261120",
+              "size": 50,
+          }
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  raise ValueError("redirect blocked")
+                  raise ValueError("redirect rejected")
 
-          def get_paths(root):
-              found = set()
-              nodes = [("$", root, 0)]
-              seen = 0
-              while nodes and seen < 3500:
-                  path, value, depth = nodes.pop()
-                  seen += 1
-                  if depth > 9:
-                      continue
-                  if isinstance(value, dict):
-                      for k, v in list(value.items())[:55]:
-                          if not isinstance(k, str) or not safe_name.fullmatch(k):
-                              continue
-                          child = path + "." + k
-                          if candidate.search(k):
-                              found.add(child)
-                          if isinstance(v, (dict, list)):
-                              nodes.append((child, v, depth + 1))
-                  elif isinstance(value, list):
-                      for item in value[:10]:
-                          if isinstance(item, (dict, list)):
-                              nodes.append((path + "[]", item, depth + 1))
-              return sorted(found), seen
-
-          opener = urllib.request.build_opener(NoRedirect())
-          for label, endpoint, payload in cases:
-              request = urllib.request.Request(
-                  endpoint, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                  headers={"x-api-key": key, "Content-Type": "application/json",
-                           "Accept": "application/json"},
-                  method="POST",
-              )
+          def to_utc_date(value):
               try:
-                  with opener.open(request, timeout=40) as resp:
-                      status = resp.status
-                      if resp.geturl() != endpoint:
-                          raise ValueError("unexpected redirect")
-                      body = resp.read(4_000_001)
-                  if len(body) > 4_000_000:
-                      raise ValueError("oversize")
-                  obj = json.loads(body)
-                  if not isinstance(obj, dict):
-                      raise TypeError("unexpected root")
-                  data = obj.get("data")
-                  rows = data.get("rows", []) if isinstance(data, dict) else []
-                  rows = rows if isinstance(rows, list) else []
-                  entries = (obj.get("search_result", [])
-                             if label == "sku_nested" else rows)
-                  entries = entries if isinstance(entries, list) else []
-                  code = obj.get("error_code")
-                  code = code if isinstance(code, int) and abs(code) < 100000 else "unknown"
-                  print(f"{label}: http={status} error_code={code} success={obj.get('success') is True} entries={len(entries)}")
-                  paths, inspected = get_paths(obj)
-                  print(f"  schema_nodes_inspected={inspected}")
-                  print(f"  candidate_field_paths={paths[:65]}")
-                  if label == "product_tags":
-                      valid = [r for r in rows if isinstance(r, dict)]
-                      hist = sum("price_info_180_days" in r for r in valid)
-                      has_min = sum("历史最低" in str(r.get("price_tags", "")) for r in valid)
-                      has_30 = sum("30天最低" in str(r.get("price_tags", "")) for r in valid)
-                      has_date = sum(bool(re.search(r"20\\d{2}-\\d{2}-\\d{2}", str(r.get("price_tags", "")))) for r in valid)
-                      print(f"  history_series_key_present={hist}/{len(valid)}")
-                      print(f"  tags_historical_min_label={has_min}/{len(valid)}")
-                      print(f"  tags_30day_min_label={has_30}/{len(valid)}")
-                      print(f"  tags_date_pattern_present={has_date}/{len(valid)}")
-                  if label == "deal_dates":
-                      valid = [r for r in rows if isinstance(r, dict)]
-                      date_count = sum("pubdate" in r and r["pubdate"] not in (None, "", "null")
-                                       for r in valid)
-                      priced = sum("page_price" in r or "price" in r for r in valid)
-                      hist = sum("price_info_180_days" in r for r in valid)
-                      print(f"  dated_offer_rows={date_count}/{len(valid)}")
-                      print(f"  offer_price_field_rows={priced}/{len(valid)}")
-                      print(f"  history_series_key_present={hist}/{len(valid)}")
-              except urllib.error.HTTPError as exc:
-                  print(f"{label}: http={exc.code}; response body withheld")
-              except Exception as exc:
-                  print(f"{label}: request_or_schema_error={type(exc).__name__}")
-              time.sleep(1)
-          print("No API key, raw payload, product listing, price, timestamp, or merchant URL printed or published.")
+                  if value in (None, "", "null"):
+                      return None
+                  if isinstance(value, (int, float)) or (
+                      isinstance(value, str) and value.isdecimal() and len(value) in (10, 13)
+                  ):
+                      n = float(value)
+                      if n > 100000000000:
+                          n /= 1000
+                      return datetime.fromtimestamp(n, timezone.utc).date()
+                  raw = str(value).strip()
+                  if re.fullmatch(r"20[0-9]{6}", raw):
+                      return datetime.strptime(raw, "%Y%m%d").date()
+                  return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+              except (ValueError, TypeError, OverflowError, OSError):
+                  return None
+
+          req = urllib.request.Request(
+              endpoint,
+              data=json.dumps(body).encode("utf-8"),
+              headers={"x-api-key": secret, "Content-Type": "application/json",
+                       "Accept": "application/json"},
+              method="POST",
+          )
+          try:
+              with urllib.request.build_opener(NoRedirect()).open(req, timeout=45) as resp:
+                  http = resp.status
+                  if resp.geturl() != endpoint:
+                      raise ValueError("unexpected redirect")
+                  raw = resp.read(5_000_001)
+              if len(raw) > 5_000_000:
+                  raise ValueError("oversized")
+              obj = json.loads(raw)
+              data = obj.get("data") if isinstance(obj, dict) else None
+              rows = data.get("rows", []) if isinstance(data, dict) else []
+              rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+              code = obj.get("error_code") if isinstance(obj, dict) else None
+              print(f"deal_depth: http={http} error_code={code if isinstance(code,int) else 'unknown'} requested_size=50 returned_rows={len(rows)}")
+              now = datetime.now(timezone.utc).date()
+              for field in ("pubdate", "publish_date"):
+                  present = [r[field] for r in rows if field in r and r[field] not in (None,"","null")]
+                  dates = [to_utc_date(v) for v in present]
+                  dates = [v for v in dates if v is not None]
+                  ages = [(now - d).days for d in dates]
+                  nonfuture = [x for x in ages if x >= 0]
+                  bins = {
+                      "0_to_7d": sum(0 <= x <= 7 for x in ages),
+                      "8_to_30d": sum(8 <= x <= 30 for x in ages),
+                      "31_to_90d": sum(31 <= x <= 90 for x in ages),
+                      "91_to_180d": sum(91 <= x <= 180 for x in ages),
+                      "older_180d": sum(x > 180 for x in ages),
+                      "future": sum(x < 0 for x in ages),
+                  }
+                  print(f"  {field}: present={len(present)}/{len(rows)} parsed={len(dates)}/{len(present)} distinct_days={len(set(dates))}")
+                  print(f"  {field}_age_buckets={bins}")
+                  print(f"  {field}_age_minmax_days={min(nonfuture) if nonfuture else 'none'}..{max(nonfuture) if nonfuture else 'none'}")
+                  print(f"  {field}_types={dict(Counter(type(v).__name__ for v in present))}")
+              match = re.compile(r"RTX[ -]*5070(?![A-Z0-9])", re.I)
+              exact = sum(bool(match.search(str(r.get("title","")))) for r in rows)
+              articles = [r.get("article_id") for r in rows if r.get("article_id")]
+              marketplaces = {str(r.get("mall_name")) for r in rows if r.get("mall_name")}
+              print(f"  model_title_matches={exact}/{len(rows)} unique_article_ids={len(set(articles))}")
+              print(f"  distinct_marketplace_count={len(marketplaces)}")
+              print(f"  both_date_and_price={sum((r.get('pubdate') is not None or r.get('publish_date') is not None) and ('price' in r or 'page_price' in r) for r in rows)}")
+          except urllib.error.HTTPError as ex:
+              print(f"deal_depth: http={ex.code} no_payload_logged")
+          except Exception as ex:
+              print(f"deal_depth: error_type={type(ex).__name__} no_payload_logged")
+          print("Only aggregate statistics; no Key, titles, precise prices, dates, or raw payload logged.")
           PY
