@@ -34,7 +34,15 @@ def summarize(payload: object, requested_sku: str, expected_model: str, *, today
     code = str(payload.get("error_code", ""))
     code = code if re.fullmatch(r"\d{4}", code) else "unknown"
     if code != "0000":
-        return {"status": "api_error", "error_code": code, "price_points": 0}
+        summary = {"status": "api_error", "error_code": code, "price_points": 0}
+        if code == "4003":
+            # Never print provider error/reason: some errors echo the API Key.
+            reason = " ".join(str(payload.get(field) or "") for field in ("error", "reason"))
+            summary["parameter_hint"] = next(
+                (field for field in ("num_iid", "cache", "result_type", "secret", "key") if field in reason),
+                "unspecified",
+            )
+        return summary
 
     items = payload.get("items")
     if not isinstance(items, dict):
@@ -112,8 +120,6 @@ def main() -> int:
         "key": key,
         "secret": secret,
         "num_iid": sku,
-        "cache": "no",
-        "result_type": "json",
     })
     request = urllib.request.Request(ENDPOINT + "?" + query, headers={"Accept": "application/json"})
     try:
