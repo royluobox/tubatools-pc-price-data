@@ -1,4 +1,4 @@
-name: Diagnose Haina dated-offer history depth (no publication)
+name: Diagnose Haina deal age controls (no publication)
 
 on:
   push:
@@ -16,102 +16,99 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Measure deal-event age buckets and capacity without logging prices
+      - name: Test CPU and phone deal history age without exposing values
         env:
           HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
         run: |
           python - <<'PY'
-          from collections import Counter
           from datetime import datetime, timezone
           import json
           import os
           import re
           import urllib.error
           import urllib.request
+          import time
 
           secret = os.environ.get("HAINA_API_KEY")
           if not secret:
               raise SystemExit("HAINA_API_KEY missing")
 
           endpoint = "https://gw-openapi.zhidemai.com/hj-search/discount/v2"
-          body = {
-              "product_query": "RTX 5070 显卡",
-              "request_from": "haina",
-              "question_id": "tubatools-history-depth-20261120",
-              "size": 50,
-          }
+          cases = [("cpu_9800x3d", "9800X3D", "9800X3D"),
+                   ("phone_16plus", "iPhone 16 Plus", "IPHONE 16 PLUS")]
+
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  raise ValueError("redirect rejected")
+                  raise ValueError("redirect blocked")
 
-          def to_utc_date(value):
+          def parse_date(value):
               try:
                   if value in (None, "", "null"):
                       return None
-                  if isinstance(value, (int, float)) or (
+                  if isinstance(value, (float, int)) or (
                       isinstance(value, str) and value.isdecimal() and len(value) in (10, 13)
                   ):
-                      n = float(value)
-                      if n > 100000000000:
-                          n /= 1000
-                      return datetime.fromtimestamp(n, timezone.utc).date()
-                  raw = str(value).strip()
-                  if re.fullmatch(r"20[0-9]{6}", raw):
-                      return datetime.strptime(raw, "%Y%m%d").date()
-                  return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
-              except (ValueError, TypeError, OverflowError, OSError):
+                      num = float(value)
+                      if num > 100000000000:
+                          num /= 1000
+                      return datetime.fromtimestamp(num, timezone.utc).date()
+                  s = str(value).strip()
+                  if re.fullmatch(r"20[0-9]{6}", s):
+                      return datetime.strptime(s, "%Y%m%d").date()
+                  return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+              except (ValueError, OverflowError, TypeError, OSError):
                   return None
 
-          req = urllib.request.Request(
-              endpoint,
-              data=json.dumps(body).encode("utf-8"),
-              headers={"x-api-key": secret, "Content-Type": "application/json",
-                       "Accept": "application/json"},
-              method="POST",
-          )
-          try:
-              with urllib.request.build_opener(NoRedirect()).open(req, timeout=45) as resp:
-                  http = resp.status
-                  if resp.geturl() != endpoint:
-                      raise ValueError("unexpected redirect")
-                  raw = resp.read(5_000_001)
-              if len(raw) > 5_000_000:
-                  raise ValueError("oversized")
-              obj = json.loads(raw)
-              data = obj.get("data") if isinstance(obj, dict) else None
-              rows = data.get("rows", []) if isinstance(data, dict) else []
-              rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
-              code = obj.get("error_code") if isinstance(obj, dict) else None
-              print(f"deal_depth: http={http} error_code={code if isinstance(code,int) else 'unknown'} requested_size=50 returned_rows={len(rows)}")
-              now = datetime.now(timezone.utc).date()
-              for field in ("pubdate", "publish_date"):
-                  present = [r[field] for r in rows if field in r and r[field] not in (None,"","null")]
-                  dates = [to_utc_date(v) for v in present]
-                  dates = [v for v in dates if v is not None]
-                  ages = [(now - d).days for d in dates]
-                  nonfuture = [x for x in ages if x >= 0]
-                  bins = {
-                      "0_to_7d": sum(0 <= x <= 7 for x in ages),
-                      "8_to_30d": sum(8 <= x <= 30 for x in ages),
-                      "31_to_90d": sum(31 <= x <= 90 for x in ages),
-                      "91_to_180d": sum(91 <= x <= 180 for x in ages),
-                      "older_180d": sum(x > 180 for x in ages),
-                      "future": sum(x < 0 for x in ages),
-                  }
-                  print(f"  {field}: present={len(present)}/{len(rows)} parsed={len(dates)}/{len(present)} distinct_days={len(set(dates))}")
-                  print(f"  {field}_age_buckets={bins}")
-                  print(f"  {field}_age_minmax_days={min(nonfuture) if nonfuture else 'none'}..{max(nonfuture) if nonfuture else 'none'}")
-                  print(f"  {field}_types={dict(Counter(type(v).__name__ for v in present))}")
-              match = re.compile(r"RTX[ -]*5070(?![A-Z0-9])", re.I)
-              exact = sum(bool(match.search(str(r.get("title","")))) for r in rows)
-              articles = [r.get("article_id") for r in rows if r.get("article_id")]
-              marketplaces = {str(r.get("mall_name")) for r in rows if r.get("mall_name")}
-              print(f"  model_title_matches={exact}/{len(rows)} unique_article_ids={len(set(articles))}")
-              print(f"  distinct_marketplace_count={len(marketplaces)}")
-              print(f"  both_date_and_price={sum((r.get('pubdate') is not None or r.get('publish_date') is not None) and ('price' in r or 'page_price' in r) for r in rows)}")
-          except urllib.error.HTTPError as ex:
-              print(f"deal_depth: http={ex.code} no_payload_logged")
-          except Exception as ex:
-              print(f"deal_depth: error_type={type(ex).__name__} no_payload_logged")
-          print("Only aggregate statistics; no Key, titles, precise prices, dates, or raw payload logged.")
+          opener = urllib.request.build_opener(NoRedirect())
+          now = datetime.now(timezone.utc).date()
+          for label, term, model in cases:
+              payload = {
+                  "product_query": term, "request_from": "haina",
+                  "question_id": "tubatools-deal-age-" + label,
+                  "size": 50,
+              }
+              req = urllib.request.Request(
+                  endpoint, data=json.dumps(payload).encode("utf-8"),
+                  headers={"x-api-key": secret, "Content-Type": "application/json",
+                           "Accept": "application/json"},
+                  method="POST",
+              )
+              try:
+                  with opener.open(req, timeout=40) as resp:
+                      status = resp.status
+                      if resp.geturl() != endpoint:
+                          raise ValueError("redirect")
+                      raw = resp.read(5_000_001)
+                  if len(raw) > 5_000_000:
+                      raise ValueError("response oversize")
+                  obj = json.loads(raw)
+                  rows = obj.get("data", {}).get("rows", []) if isinstance(obj, dict) else []
+                  rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+                  code = obj.get("error_code") if isinstance(obj, dict) else None
+                  exact = sum(model in str(r.get("title", "")).upper() for r in rows)
+                  prices = sum("page_price" in r or "price" in r for r in rows)
+                  articles = {str(r["article_id"]) for r in rows if r.get("article_id")}
+                  malls = {str(r["mall_name"]) for r in rows if r.get("mall_name")}
+                  print(f"{label}: http={status} code={code if isinstance(code,int) else 'unknown'} rows={len(rows)} model_matches={exact} priced={prices} distinct_articles={len(articles)} distinct_malls={len(malls)}")
+                  for field in ("pubdate", "publish_date"):
+                      values = [r[field] for r in rows if r.get(field) not in (None, "", "null")]
+                      dates = [parse_date(x) for x in values]
+                      dates = [x for x in dates if x is not None]
+                      ages = [(now-x).days for x in dates]
+                      buckets = {
+                          "0_7": sum(0 <= x <= 7 for x in ages),
+                          "8_30": sum(8 <= x <= 30 for x in ages),
+                          "31_90": sum(31 <= x <= 90 for x in ages),
+                          "91_180": sum(91 <= x <= 180 for x in ages),
+                          "older": sum(x > 180 for x in ages),
+                          "future": sum(x < 0 for x in ages),
+                      }
+                      print(f"  {field}: present={len(values)} parsed={len(dates)} distinct_days={len(set(dates))} age_buckets={buckets}")
+                      print(f"  {field}_max_age_days={max((x for x in ages if x>=0), default='none')}")
+              except urllib.error.HTTPError as exc:
+                  print(f"{label}: http={exc.code}; no response data printed")
+              except Exception as exc:
+                  print(f"{label}: error_type={type(exc).__name__}; no response data printed")
+              time.sleep(1)
+          print("No secrets, titles, prices, exact timestamps or raw responses disclosed; no publication.")
           PY
