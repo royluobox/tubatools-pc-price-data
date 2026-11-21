@@ -1,4 +1,4 @@
-name: Update price feed
+name: Update Frocloud monthly archive
 
 on:
   schedule:
@@ -29,61 +29,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Fetch VRAMGlass feed
-        env:
-          VRAMGLASS_KEY: ${{ secrets.VRAMGLASS_KEY }}
-        run: python scripts/fetch_feed.py
-
-      - name: Generate ZOL catalog
-        continue-on-error: true
-        env:
-          ZOL_PAGES: "4"
-          TREND_MODELS: "80"
-        run: dotnet run --project scripts/zol-feed -c Release
-
-      - name: Fetch approved marketplace listings (optional; publication gated)
-        continue-on-error: true
-        env:
-          HAINA_API_KEY: ${{ secrets.HAINA_API_KEY }}
-          HAINA_MAX_TARGETS: "4"
-          HJK_API_KEY: ${{ secrets.HJK_API_KEY }}
-          HJK_MAX_TARGETS: "4"
-          HJK_PLATFORMS: "jd,pdd"
-          MARKET_PUBLISH_ENABLED: ${{ vars.MARKET_PUBLISH_ENABLED }}
-          MARKET_PROVIDER: "auto"
-          MARKET_PAUSE_SECONDS: "2"
-          TBK_APP_KEY: ${{ secrets.TBK_APP_KEY }}
-          TBK_APP_SECRET: ${{ secrets.TBK_APP_SECRET }}
-          TBK_ADZONE_ID: ${{ secrets.TBK_ADZONE_ID }}
-          TBK_MAX_TARGETS: "12"
-        run: python scripts/fetch_market.py
-
       - name: Sync attributed Frocloud monthly reference archive (no API key)
         # Only publicly licensed CSVs; original month and price are retained.
         # A failed source fetch leaves the previous snapshot untouched.
         run: python scripts/fetch_frocloud.py
 
-      - name: Validate all snapshots before publication
+      - name: Validate active Frocloud snapshot
         run: python scripts/validate_snapshot.py
 
       - name: Commit snapshot
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add site/data/latest.json
-          if [ -f site/data/catalog.json ]; then
-            git add site/data/catalog.json
-          fi
-          if [ -f site/data/market.json ]; then
-            git add site/data/market.json
-          fi
-          if [ -f site/data/frocloud-monthly.json ]; then
-            git add site/data/frocloud-monthly.json
-          fi
+          git add site/data/frocloud-monthly.json
           if git diff --cached --quiet; then
             echo "数据无变化"
           else
