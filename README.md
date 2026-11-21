@@ -1,3 +1,5 @@
+> **当前运行策略（2026-11-21）**：价格插件唯一启用来源为 [x1shang/frocloud-DIYPCmarket](https://github.com/x1shang/frocloud-DIYPCmarket) 的 CC BY 4.0 月度历史数据。本仓库计划任务仅同步并校验 `site/data/frocloud-monthly.json`。原 ZOL、VRAMGlass/闲鱼、电商采集代码及历史 JSON 暂时保留为归档，**不再执行采集/更新，也不由当前插件读取**；蚂蚁平台仅作为未来可选接入记录，不参加现行统计。源数据缺店铺 SKU、具体日期和实时成交信息，请勿将其解释为到手价。
+
 # 图吧工具箱 CE · 价格数据仓库
 
 本仓库为 [价格走势插件](https://github.com/royluobox/tubatools-pc-price-trend) 定时生成**可溯源**的公开快照。三条价格口径相互独立：

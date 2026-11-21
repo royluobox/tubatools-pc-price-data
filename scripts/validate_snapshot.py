@@ -94,14 +94,11 @@ def validate(path: Path, *, optional: bool = False) -> dict:
 
 def main() -> int:
     try:
+        # Legacy VRAMGlass/ZOL/marketplace snapshots are archived but not active.
+        # Only the publicly licensed Frocloud monthly snapshot is published now.
         result = {
-            "VRAMGlass": validate(DATA / "latest.json"),
-            "ZOL": validate(DATA / "catalog.json"),
-            "Marketplace": validate(DATA / "market.json", optional=True),
-            "FrocloudMonthly": (
-                validate_frocloud_feed(json.loads((DATA / "frocloud-monthly.json").read_text("utf-8")))
-                if (DATA / "frocloud-monthly.json").exists()
-                else {"status": "not-configured", "models": 0}
+            "FrocloudMonthly": validate_frocloud_feed(
+                json.loads((DATA / "frocloud-monthly.json").read_text("utf-8"))
             ),
         }
     except (KeyError, ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
