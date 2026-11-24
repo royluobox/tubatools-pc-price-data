@@ -1,0 +1,153 @@
+name: Fenxiang history isolated smoke test
+on:
+  push:
+    branches: [codex/fenxiang-history-smoke]
+    paths: [.github/workflows/fenxiang-history-smoke.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      FENXIANG_MCP_API_KEY: ${{ secrets.FENXIANG_MCP_API_KEY }}
+    steps:
+      - name: Validate official MCP with a few laptop samples (summary only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, json, re, sys, datetime, decimal, urllib.request, urllib.error
+          from urllib.parse import urlsplit
+          key = os.environ.get("FENXIANG_MCP_API_KEY", "").strip()
+          if not key:
+              print("BLOCKED: repository Actions secret FENXIANG_MCP_API_KEY is not configured.")
+              sys.exit(1)
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect())
+          endpoint = "https://api.fenxianglife.com/njia/mcp"
+          counter = 0
+          def rpc(method, params=None):
+              global counter
+              counter += 1
+              req = urllib.request.Request(endpoint, method="POST",
+                  headers={"Content-Type": "application/json",
+                           "Accept": "application/json, text/event-stream",
+                           "X-Api-Key": key,
+                           "User-Agent": "tubatools-fenxiang-history-smoke/1.0"},
+                  data=json.dumps({"jsonrpc":"2.0","id":counter,"method":method,
+                                   "params":params or {}}, ensure_ascii=False).encode())
+              try:
+                  with opener.open(req, timeout=60) as resp:
+                      raw = resp.read(2 * 1024 * 1024 + 1)
+                      if len(raw) > 2 * 1024 * 1024: raise ValueError("oversize")
+                      body = raw.decode("utf-8")
+                      if "text/event-stream" in resp.headers.get("Content-Type", ""):
+                          messages = [json.loads(line[5:].strip()) for line in body.splitlines()
+                                      if line.startswith("data:") and line[5:].strip()]
+                          parsed = next(m for m in reversed(messages)
+                                        if isinstance(m,dict) and ("result" in m or "error" in m))
+                      else:
+                          parsed = json.loads(body)
+                  if "error" in parsed: raise RuntimeError("RPC rejected")
+                  result = parsed.get("result", {})
+                  if not isinstance(result, dict) or result.get("isError"):
+                      raise RuntimeError("tool rejected")
+                  return result
+              except urllib.error.HTTPError as exc:
+                  print(f"{method}: HTTP {exc.code} (response omitted)")
+                  raise RuntimeError("HTTP request failed") from None
+              except Exception:
+                  print(f"{method}: failed (response omitted)")
+                  raise RuntimeError("MCP request failed") from None
+          def payloads(result):
+              sc = result.get("structuredContent")
+              if isinstance(sc, (dict,list)): yield sc
+              for block in result.get("content", []):
+                  if not isinstance(block,dict) or block.get("type") != "text": continue
+                  val = block.get("text","")
+                  try:
+                      data = json.loads(val)
+                      if isinstance(data,(dict,list)): yield data
+                  except (ValueError,TypeError): pass
+          def walk(obj):
+              if isinstance(obj,dict):
+                  yield obj
+                  for v in obj.values(): yield from walk(v)
+              elif isinstance(obj,list):
+                  for v in obj: yield from walk(v)
+          def call(name, args):
+              return rpc("tools/call", {"name":name,"arguments":args})
+          def shopping_url(url):
+              if not isinstance(url,str): return False
+              try:
+                  u = urlsplit(url)
+                  host = u.hostname or ""
+                  domains = ("jd.com","3.cn","taobao.com","tmall.com","tb.cn","vip.com","fenxianglife.com")
+                  return u.scheme == "https" and any(host == d or host.endswith("."+d) for d in domains)
+              except ValueError: return False
+          def valid_point(point):
+              if not isinstance(point,dict): return None
+              try:
+                  date = datetime.date.fromisoformat(str(point["time"])[:10])
+                  price = decimal.Decimal(str(point["price"]))
+                  if date > datetime.date.today() + datetime.timedelta(days=1) or not price.is_finite() or price <= 0:
+                      return None
+                  return date.isoformat(), price
+              except (KeyError,ValueError,TypeError,decimal.InvalidOperation): return None
+          try:
+              tools = rpc("tools/list").get("tools", [])
+              names = {t.get("name") for t in tools if isinstance(t,dict)}
+              if not {"goods_search","history_price"} <= names:
+                  print("BLOCKED: expected tools not listed.")
+                  sys.exit(1)
+              print("MCP transport and expected tools: OK (not proof of full-history entitlement)")
+              result = call("goods_search", {"keyword":"联想 拯救者 游戏笔记本", "platform":"jd",
+                                          "size":5,"officialShop":True,"responseFormat":"json"})
+              docs = list(payloads(result))
+              urls = []
+              for doc in docs:
+                  for entry in walk(doc):
+                      for field in ("goodsUrl",):
+                          u = entry.get(field)
+                          if shopping_url(u) and u not in urls: urls.append(u)
+              if not urls:
+                  for block in result.get("content",[]):
+                      if isinstance(block,dict) and block.get("type") == "text":
+                          for url in re.findall(r"\[[^\]]*(?:下单|购买|去看看|链接)[^\]]*\]\((https://[^\s)]+)\)", block.get("text","")):
+                              if shopping_url(url) and url not in urls: urls.append(url)
+              urls = urls[:3]
+              print(f"goods_search: candidate URLs {len(urls)}; exact SKU matching not yet independently verified")
+              if not urls:
+                  print("BLOCKED: no usable product URL in response; a known SKU URL is needed.")
+                  sys.exit(1)
+              complete = 0
+              for i,url in enumerate(urls,1):
+                  r = call("history_price", {"goodsUrl":url,"responseFormat":"json"})
+                  docs = list(payloads(r))
+                  arrays = []
+                  for doc in docs:
+                      for entry in walk(doc):
+                          points = entry.get("points")
+                          if isinstance(points,list):
+                              arrays.append(points)
+                  points = max(arrays, key=len, default=[])
+                  valid = [p for p in map(valid_point,points) if p is not None]
+                  dates = sorted({d for d,p in valid})
+                  print(f"sample {i}: machine-readable payload={bool(docs)}, returned points={len(points)}, valid points={len(valid)}, distinct dates={len(dates)}")
+                  if dates:
+                      print(f"sample {i}: date range {dates[0]} .. {dates[-1]}")
+                  if len(dates) >= 2 and len(valid) == len(points):
+                      complete += 1
+              print(f"SUMMARY: {complete}/{len(urls)} samples contain at least two valid dated points; exact SKU and redistributing rights remain unverified.")
+              if complete == 0:
+                  print("INSUFFICIENT: cannot construct a verified historical curve from this key/response.")
+                  sys.exit(2)
+          except RuntimeError:
+              sys.exit(1)
+          except Exception:
+              print("FAILED: unexpected response structure (details intentionally omitted).")
+              sys.exit(1)
+          PY
