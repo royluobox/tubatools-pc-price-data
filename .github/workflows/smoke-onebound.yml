@@ -1,0 +1,45 @@
+name: Smoke test OneBound JD history (one call; no publication)
+
+# One request per diagnostic workflow-file push, or per explicit manual dispatch.
+# Uses the vendor-documented minimal query after the first 4003 parameter error.
+# NEVER scheduled or run as part of update-feed.
+on:
+  workflow_dispatch:
+    inputs:
+      sku:
+        description: "Numeric JD SKU; default is AMD 9800X3D"
+        required: true
+        default: "100147630258"
+        type: choice
+        options:
+          - "100147630258"
+          - "100148892719"
+  push:
+    branches: ["codex/onebound-history-smoke"]
+    paths: [".github/workflows/smoke-onebound.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onebound-manual-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  one-call:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline summary and redaction tests
+        run: python -m unittest discover -s tests -p test_smoke_onebound.py -v
+      - name: Single authorized JD history request; no data persisted
+        env:
+          ONEBOUND_API_KEY: ${{ secrets.ONEBOUND_API_KEY }}
+          ONEBOUND_API_SECRET: ${{ secrets.ONEBOUND_API_SECRET }}
+          ONEBOUND_SMOKE_SKU: ${{ inputs.sku || '100147630258' }}
+          ONEBOUND_SMOKE_MODEL: ${{ inputs.sku == '100148892719' && '5070 Ti' || '9800X3D' }}
+        run: python scripts/smoke_onebound.py
