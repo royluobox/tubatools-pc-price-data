@@ -1,4 +1,4 @@
-name: Fenxiang isolated category coverage audit
+name: Fenxiang bounded catalogue discovery
 on:
   push:
     branches: [codex/fenxiang-history-smoke]
@@ -9,11 +9,11 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     env:
       FENXIANG_MCP_API_KEY: ${{ secrets.FENXIANG_MCP_API_KEY }}
     steps:
-      - name: Audit category samples and history entitlement (summary only)
+      - name: Count deduplicated catalogue candidates (aggregate only)
         shell: bash
         run: |
           python3 - <<'PY'
@@ -97,87 +97,116 @@ jobs:
                       return None
                   return date.isoformat(), price
               except (KeyError,ValueError,TypeError,decimal.InvalidOperation): return None
-          # Each query is a single official tools/call. No bulk crawling or persistence.
-          probes = [
-              ("cpu", "台式机 CPU Ryzen Core 处理器", r"CPU|处理器|Ryzen|酷睿"),
-              ("gpu", "台式机 独立显卡 RTX RX", r"显卡|RTX\s*\d|RX\s*\d"),
-              ("motherboard", "台式机 主板 B650 B760", r"主板|B650|B760"),
-              ("memory", "台式机 DDR5 内存条 32GB", r"内存条|DDR5"),
-              ("ssd", "M.2 NVMe 固态硬盘 1TB", r"固态|SSD|NVMe"),
-              ("hdd", "台式机 机械硬盘 4TB", r"机械硬盘|HDD"),
-              ("psu", "台式机 ATX 电源 750W", r"电源|750W"),
-              ("case", "台式机 电脑机箱 ATX", r"机箱"),
-              ("cooler", "CPU 散热器 风冷 水冷", r"散热器|水冷|风冷"),
-              ("monitor", "电脑显示器 27英寸", r"显示器|27英寸"),
-              ("desktop", "品牌 台式机 整机", r"台式机|整机|主机"),
-              ("laptop_lenovo", "联想 拯救者 游戏笔记本", r"拯救者|LEGION"),
-              ("laptop_asus", "华硕 ROG 游戏笔记本", r"华硕|ROG|枪神|魔霸|幻"),
-              ("laptop_hp", "惠普 暗影精灵 游戏笔记本", r"惠普|暗影精灵|OMEN"),
-              ("laptop_dell", "戴尔 Alienware 游戏笔记本", r"戴尔|外星人|Alienware|游匣"),
-              ("laptop_acer", "宏碁 掠夺者 游戏笔记本", r"宏碁|掠夺者|Predator|暗影骑士"),
-              ("laptop_msi", "微星 游戏笔记本", r"微星|MSI|泰坦|雷影"),
-              ("laptop_mechrevo", "机械革命 游戏笔记本", r"机械革命|MECHREVO"),
-              ("laptop_thin", "轻薄本 笔记本电脑", r"笔记本|轻薄本|Laptop|ThinkBook|MateBook|小新"),
+          import time, threading, unicodedata
+          from concurrent.futures import ThreadPoolExecutor
+          from urllib.parse import parse_qs
+          # Bounded catalogue-discovery audit, not a complete enumeration.
+          groups = [
+              ("cpu", r"CPU|处理器|Ryzen|酷睿|锐龙", ["Intel 酷睿 i3 i5 处理器","Intel 酷睿 i7 i9 处理器","Intel Core Ultra 桌面 处理器","AMD 锐龙 Ryzen 5000 处理器","AMD 锐龙 Ryzen 7000 处理器","AMD 锐龙 Ryzen 9000 X3D 处理器"]),
+              ("gpu", r"显卡|RTX\s*\d|RX\s*\d|Arc\s*[AB]", ["RTX 4060 4070 显卡","RTX 5060 5060Ti 显卡","RTX 5070 5070Ti 显卡","RTX 5080 5090 显卡","AMD Radeon RX 7000 显卡","AMD RX 9060 9070 显卡","Intel Arc B580 显卡"]),
+              ("motherboard", r"主板|B650|B850|B760|Z790|X870|Z890", ["AMD B650 B850 主板","AMD X670 X870 主板","Intel B760 B860 主板","Intel Z790 Z890 主板","ITX 主板"]),
+              ("memory", r"内存条|DDR[45]|DRAM", ["DDR4 台式机 内存条","DDR5 台式机 内存条","DDR5 笔记本 内存条","DDR5 64GB 内存套条"]),
+              ("ssd", r"固态|SSD|NVMe", ["NVMe PCIe 4.0 1TB 固态硬盘","NVMe PCIe 4.0 2TB 固态硬盘","PCIe 5.0 固态硬盘","SATA SSD 固态硬盘"]),
+              ("hdd", r"机械硬盘|HDD|酷狼|红盘|紫盘|酷鱼", ["2TB 4TB 机械硬盘","6TB 8TB 机械硬盘","12TB 16TB 机械硬盘","NAS 机械硬盘"]),
+              ("psu", r"电源|ATX[3 ]|SFX", ["550W 650W 电脑电源","750W 850W 电脑电源","1000W 1200W 电脑电源","SFX 电脑电源"]),
+              ("case", r"机箱", ["ATX 中塔 电脑机箱","MATX 电脑机箱","ITX 电脑机箱","海景房 电脑机箱"]),
+              ("cooler", r"散热器|水冷|风冷", ["CPU 塔式 风冷 散热器","CPU 下压式 散热器","240 280 一体式水冷 散热器","360 420 一体式水冷 散热器"]),
+              ("monitor", r"显示器|monitor", ["24寸 1080P 显示器","27寸 2K 高刷 显示器","27寸 32寸 4K 显示器","OLED 显示器","带鱼屏 显示器"]),
+              ("desktop", r"台式机|整机|主机|迷你电脑|mini\s*pc", ["联想 戴尔 惠普 台式机","品牌 游戏电脑 整机","迷你电脑 Mini PC"]),
+              ("laptop", r"笔记本|游戏本|轻薄本|Laptop|MacBook|拯救者|ThinkPad|ThinkBook|灵耀|小新|MateBook|暗影精灵|外星人|掠夺者|机械革命|天选|枪神|魔霸|幻[0-9Xx]|无畏|战[0-9]|雷影|泰坦|游匣|星Book|灵越|非凡|暗影骑士|荣耀|MagicBook|RedmiBook|Yoga", ["联想 拯救者 Y7000 Y9000 笔记本","联想 拯救者 R7000 R9000 笔记本","联想 ThinkPad 笔记本","联想 ThinkBook 笔记本","联想 小新 YOGA 笔记本","华硕 ROG 枪神 魔霸 笔记本","华硕 天选 笔记本","华硕 灵耀 无畏 笔记本","惠普 暗影精灵 笔记本","惠普 战系列 星Book 笔记本","戴尔 外星人 游匣 笔记本","戴尔 灵越 XPS 笔记本","宏碁 掠夺者 暗影骑士 笔记本","宏碁 非凡 笔记本","微星 泰坦 雷影 笔记本","机械革命 蛟龙 极光 耀世 笔记本","华为 MateBook 笔记本","荣耀 MagicBook 笔记本","小米 RedmiBook 笔记本","苹果 MacBook Air Pro 笔记本","神舟 战神 笔记本","七彩虹 隐星 将星 笔记本"]),
           ]
-          # Prefer product-level structured fields, and fall back to explicit Markdown links.
-          # A title match is only a relevance heuristic, not validation of a model or SKU.
-          def extract(result, pattern):
-              candidates = {}
-              def add(u, title):
-                  if not shopping_url(u): return
-                  title = str(title or "")
-                  old = candidates.get(u, "")
-                  if len(title) > len(old) or u not in candidates:
-                      candidates[u] = title[:1200]
-              for doc in payloads(result):
+          probes = [(cat, pattern, q) for cat,pattern,queries in groups for q in queries]
+          def norm(s):
+              return re.sub(r"\s+","",unicodedata.normalize("NFKC",str(s or "")).casefold())
+          def direct_id(url):
+              try:
+                  u=urlsplit(url); host=(u.hostname or "").lower(); q=parse_qs(u.query)
+                  if host=="jd.com" or host.endswith(".jd.com"):
+                      m=re.search(r"/(?:product/)?(\d{5,})(?:\.html)?/?$",u.path)
+                      if m and ("item" in host or "/product/" in u.path): return "jd:"+m.group(1)
+                      if q.get("sku") and q["sku"][0].isdigit(): return "jd:"+q["sku"][0]
+                  if host.endswith(".taobao.com") or host.endswith(".tmall.com"):
+                      if q.get("id") and q["id"][0].isdigit() and ("item" in host or "detail" in host):
+                          return "ali:"+q["id"][0]
+                  if host.endswith(".vip.com"):
+                      m=re.search(r"/detail-(\d+)-(\d+)\.html",u.path)
+                      if m: return "vip:"+m.group(2)
+              except (ValueError,IndexError): pass
+              return None
+          accessory=re.compile(r"保护膜|键盘膜|屏幕膜|贴膜|保护壳|笔记本包|电脑包|适配器|转接线|维修服务|上门维修|补差价|定金专拍|空盒|模型玩具|笔记本支架|显卡支架|机箱风扇",re.I)
+          def extract(r,pattern):
+              out={}
+              def add(url,title,spec):
+                  if not shopping_url(url): return
+                  title=str(title or "")[:1200];spec=str(spec or "")[:500]
+                  if not title: return
+                  item=(title,spec)
+                  if url not in out or len(title)+len(spec)>sum(map(len,out[url])): out[url]=item
+              for doc in payloads(r):
                   for entry in walk(doc):
-                      title = next((entry.get(k) for k in ("goodsName","itemTitle","title","name","displayName") if isinstance(entry.get(k),str)), "")
+                      title=next((entry.get(k) for k in ("goodsName","itemTitle","title","name","displayName") if isinstance(entry.get(k),str)), "")
+                      spec=next((entry.get(k) for k in ("spec","specText","skuSpec") if isinstance(entry.get(k),str)), "")
                       for field in ("goodsUrl","url","link","buyUrl"):
-                          if title or field == "goodsUrl":
-                              add(entry.get(field), title)
-              for block in result.get("content", []):
-                  if not isinstance(block,dict) or block.get("type") != "text": continue
-                  for line in str(block.get("text","")).splitlines():
-                      for m in re.finditer(r"\[([^\]]+)\]\((https://[^\s)]+)\)",line):
-                          label = m.group(1)
-                          if re.search(r"下单|购买|去看看|商品|链接|查看",label) or re.search(pattern,line,re.I):
-                              add(m.group(2), line if line.lstrip().startswith("|") else label)
-              plausible = sum(bool(re.search(pattern,t,re.I)) for t in candidates.values())
-              return candidates, plausible
+                          add(entry.get(field),title,spec)
+              if not out:
+                  for b in r.get("content",[]):
+                      if not isinstance(b,dict) or b.get("type")!="text": continue
+                      for line in str(b.get("text","")).splitlines():
+                          if not line.lstrip().startswith("|"): continue
+                          for m in re.finditer(r"\[([^\]]+)\]\((https://[^\s)]+)\)",line):
+                              title=m.group(1)
+                              # Markdown fallback: count candidate links, not title/spec identities.
+                              add(m.group(2),title,"")
+              matched={u:(t,sp) for u,(t,sp) in out.items() if re.search(pattern,t,re.I) and not accessory.search(t)}
+              return out,matched
+          lock=threading.Lock(); stop=threading.Event(); last_start=0.0
+          def query(probe):
+              global last_start
+              cat,pattern,q=probe
+              with lock:
+                  if stop.is_set(): return None
+                  time.sleep(max(0,1.15-(time.monotonic()-last_start)))
+                  if stop.is_set(): return None
+                  last_start=time.monotonic()
+              try:
+                  r=call("goods_search",{"keyword":q,"platform":"all","size":20,"responseFormat":"json"})
+                  out,matched=extract(r,pattern)
+                  return cat,out,matched
+              except RuntimeError:
+                  stop.set()
+                  return (cat,None,None)
           try:
-              names = {t.get("name") for t in rpc("tools/list").get("tools",[]) if isinstance(t,dict)}
-              if not {"goods_search","history_price"} <= names: raise RuntimeError("tools unavailable")
-              print("MCP: OK")
-              import time
-              results = {}
-              completed = 0
-              for label,keyword,pattern in probes:
-                  try:
-                      r = call("goods_search", {"keyword":keyword,"platform":"all","size":5,"responseFormat":"json"})
-                      urls, plausible = extract(r,pattern)
-                      results[label] = list(urls)
-                      completed += 1
-                      print(f"COVERAGE {label}: urls={len(urls)} title_match={plausible} structured={bool(list(payloads(r)))}")
-                  except RuntimeError:
-                      print(f"COVERAGE {label}: request_failed")
-                      break
-                  time.sleep(1.2)
-              print(f"SEARCH_SUMMARY attempted={min(completed+1,len(probes)) if completed<len(probes) else completed} completed={completed} nonempty={sum(bool(v) for v in results.values())} unique_urls={len(set(u for a in results.values() for u in a))}")
-              checked = 0
-              for label in ("cpu","gpu","laptop_lenovo"):
-                  if not results.get(label): continue
-                  r = call("history_price", {"goodsUrl":results[label][0],"responseFormat":"json"})
-                  arrays = [e["points"] for d in payloads(r) for e in walk(d) if isinstance(e.get("points"),list)]
-                  points = max(arrays,key=len,default=[])
-                  dates = {p[0] for p in map(valid_point,points) if p is not None}
-                  print(f"HISTORY {label}: points={len(points)} valid_dates={len(dates)}")
-                  checked += 1
-                  time.sleep(1.2)
-              print(f"REQUEST_SUMMARY total_rpc={counter} history_checks={checked}")
+              names={t.get("name") for t in rpc("tools/list").get("tools",[]) if isinstance(t,dict)}
+              if "goods_search" not in names: raise RuntimeError("tool unavailable")
+              print(f"PLAN queries={len(probes)} size=20 workers=3 min_start_interval=1.15s",flush=True)
+              stats={cat:{"queries":0,"nonempty":0,"capped":0,"raw":{},"matched":{}} for cat,_,_ in groups}
+              complete=0; failures=0
+              with ThreadPoolExecutor(max_workers=3) as pool:
+                  for item in pool.map(query,probes):
+                      if item is None: continue
+                      cat,raw,matched=item
+                      if raw is None:
+                          failures+=1; continue
+                      complete+=1; a=stats[cat];a["queries"]+=1
+                      a["nonempty"]+=bool(raw);a["capped"]+=len(raw)>=20
+                      a["raw"].update(raw);a["matched"].update(matched)
+                      if complete%10==0: print(f"PROGRESS completed={complete}",flush=True)
+              all_raw={};all_matched={}
+              for cat,a in stats.items():
+                  raw=a["raw"];m=a["matched"];all_raw.update(raw);all_matched.update(m)
+                  ids={i for u in m if (i:=direct_id(u))}
+                  # A distinct normalized title/spec is an observation, not a canonical model.
+                  titles={norm(t)+"|"+norm(sp) for t,sp in m.values()}
+                  print(f"CATALOG {cat}: queries={a['queries']} nonempty={a['nonempty']} capped={a['capped']} urls={len(raw)} relevant_urls={len(m)} direct_sku_ids={len(ids)} title_specs={len(titles)} explicit_spec_urls={sum(bool(sp) for t,sp in m.values())}")
+              ids={i for u in all_matched if (i:=direct_id(u))}
+              titles={norm(t)+"|"+norm(sp) for t,sp in all_matched.values()}
+              print(f"TOTAL planned={len(probes)} completed={complete} failures={failures} unique_urls={len(all_raw)} relevant_urls={len(all_matched)} direct_sku_ids={len(ids)} title_specs={len(titles)} explicit_spec_urls={sum(bool(sp) for t,sp in all_matched.values())} rpc={counter}")
+              print("LIMIT: title heuristic, incomplete search results, no exact catalog or historical coverage claim. No raw data persisted.")
+              if failures or complete!=len(probes): sys.exit(2)
           except RuntimeError:
               print(f"STOPPED total_rpc={counter}")
               sys.exit(1)
           except Exception:
-              print("FAILED: unexpected response structure (details intentionally omitted).")
+              print("FAILED: response processing error (details omitted).")
               sys.exit(1)
           PY
