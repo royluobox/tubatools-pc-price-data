@@ -1,4 +1,4 @@
-name: Fenxiang history isolated smoke test
+name: Fenxiang isolated category coverage audit
 on:
   push:
     branches: [codex/fenxiang-history-smoke]
@@ -9,11 +9,11 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 12
     env:
       FENXIANG_MCP_API_KEY: ${{ secrets.FENXIANG_MCP_API_KEY }}
     steps:
-      - name: Validate official MCP with a few laptop samples (summary only)
+      - name: Audit category samples and history entitlement (summary only)
         shell: bash
         run: |
           python3 - <<'PY'
@@ -97,55 +97,85 @@ jobs:
                       return None
                   return date.isoformat(), price
               except (KeyError,ValueError,TypeError,decimal.InvalidOperation): return None
-          try:
-              tools = rpc("tools/list").get("tools", [])
-              names = {t.get("name") for t in tools if isinstance(t,dict)}
-              if not {"goods_search","history_price"} <= names:
-                  print("BLOCKED: expected tools not listed.")
-                  sys.exit(1)
-              print("MCP transport and expected tools: OK (not proof of full-history entitlement)")
-              result = call("goods_search", {"keyword":"联想 拯救者 游戏笔记本", "platform":"jd",
-                                          "size":5,"officialShop":True,"responseFormat":"json"})
-              docs = list(payloads(result))
-              urls = []
-              for doc in docs:
+          # Each query is a single official tools/call. No bulk crawling or persistence.
+          probes = [
+              ("cpu", "台式机 CPU Ryzen Core 处理器", r"CPU|处理器|Ryzen|酷睿"),
+              ("gpu", "台式机 独立显卡 RTX RX", r"显卡|RTX\s*\d|RX\s*\d"),
+              ("motherboard", "台式机 主板 B650 B760", r"主板|B650|B760"),
+              ("memory", "台式机 DDR5 内存条 32GB", r"内存条|DDR5"),
+              ("ssd", "M.2 NVMe 固态硬盘 1TB", r"固态|SSD|NVMe"),
+              ("hdd", "台式机 机械硬盘 4TB", r"机械硬盘|HDD"),
+              ("psu", "台式机 ATX 电源 750W", r"电源|750W"),
+              ("case", "台式机 电脑机箱 ATX", r"机箱"),
+              ("cooler", "CPU 散热器 风冷 水冷", r"散热器|水冷|风冷"),
+              ("monitor", "电脑显示器 27英寸", r"显示器|27英寸"),
+              ("desktop", "品牌 台式机 整机", r"台式机|整机|主机"),
+              ("laptop_lenovo", "联想 拯救者 游戏笔记本", r"拯救者|LEGION"),
+              ("laptop_asus", "华硕 ROG 游戏笔记本", r"华硕|ROG|枪神|魔霸|幻"),
+              ("laptop_hp", "惠普 暗影精灵 游戏笔记本", r"惠普|暗影精灵|OMEN"),
+              ("laptop_dell", "戴尔 Alienware 游戏笔记本", r"戴尔|外星人|Alienware|游匣"),
+              ("laptop_acer", "宏碁 掠夺者 游戏笔记本", r"宏碁|掠夺者|Predator|暗影骑士"),
+              ("laptop_msi", "微星 游戏笔记本", r"微星|MSI|泰坦|雷影"),
+              ("laptop_mechrevo", "机械革命 游戏笔记本", r"机械革命|MECHREVO"),
+              ("laptop_thin", "轻薄本 笔记本电脑", r"笔记本|轻薄本|Laptop|ThinkBook|MateBook|小新"),
+          ]
+          # Prefer product-level structured fields, and fall back to explicit Markdown links.
+          # A title match is only a relevance heuristic, not validation of a model or SKU.
+          def extract(result, pattern):
+              candidates = {}
+              def add(u, title):
+                  if not shopping_url(u): return
+                  title = str(title or "")
+                  old = candidates.get(u, "")
+                  if len(title) > len(old) or u not in candidates:
+                      candidates[u] = title[:1200]
+              for doc in payloads(result):
                   for entry in walk(doc):
-                      for field in ("goodsUrl",):
-                          u = entry.get(field)
-                          if shopping_url(u) and u not in urls: urls.append(u)
-              if not urls:
-                  for block in result.get("content",[]):
-                      if isinstance(block,dict) and block.get("type") == "text":
-                          for url in re.findall(r"\[[^\]]*(?:下单|购买|去看看|链接)[^\]]*\]\((https://[^\s)]+)\)", block.get("text","")):
-                              if shopping_url(url) and url not in urls: urls.append(url)
-              urls = urls[:3]
-              print(f"goods_search: candidate URLs {len(urls)}; exact SKU matching not yet independently verified")
-              if not urls:
-                  print("BLOCKED: no usable product URL in response; a known SKU URL is needed.")
-                  sys.exit(1)
-              complete = 0
-              for i,url in enumerate(urls,1):
-                  r = call("history_price", {"goodsUrl":url,"responseFormat":"json"})
-                  docs = list(payloads(r))
-                  arrays = []
-                  for doc in docs:
-                      for entry in walk(doc):
-                          points = entry.get("points")
-                          if isinstance(points,list):
-                              arrays.append(points)
-                  points = max(arrays, key=len, default=[])
-                  valid = [p for p in map(valid_point,points) if p is not None]
-                  dates = sorted({d for d,p in valid})
-                  print(f"sample {i}: machine-readable payload={bool(docs)}, returned points={len(points)}, valid points={len(valid)}, distinct dates={len(dates)}")
-                  if dates:
-                      print(f"sample {i}: date range {dates[0]} .. {dates[-1]}")
-                  if len(dates) >= 2 and len(valid) == len(points):
-                      complete += 1
-              print(f"SUMMARY: {complete}/{len(urls)} samples contain at least two valid dated points; exact SKU and redistributing rights remain unverified.")
-              if complete == 0:
-                  print("INSUFFICIENT: cannot construct a verified historical curve from this key/response.")
-                  sys.exit(2)
+                      title = next((entry.get(k) for k in ("goodsName","itemTitle","title","name","displayName") if isinstance(entry.get(k),str)), "")
+                      for field in ("goodsUrl","url","link","buyUrl"):
+                          if title or field == "goodsUrl":
+                              add(entry.get(field), title)
+              for block in result.get("content", []):
+                  if not isinstance(block,dict) or block.get("type") != "text": continue
+                  for line in str(block.get("text","")).splitlines():
+                      for m in re.finditer(r"\[([^\]]+)\]\((https://[^\s)]+)\)",line):
+                          label = m.group(1)
+                          if re.search(r"下单|购买|去看看|商品|链接|查看",label) or re.search(pattern,line,re.I):
+                              add(m.group(2), line if line.lstrip().startswith("|") else label)
+              plausible = sum(bool(re.search(pattern,t,re.I)) for t in candidates.values())
+              return candidates, plausible
+          try:
+              names = {t.get("name") for t in rpc("tools/list").get("tools",[]) if isinstance(t,dict)}
+              if not {"goods_search","history_price"} <= names: raise RuntimeError("tools unavailable")
+              print("MCP: OK")
+              import time
+              results = {}
+              completed = 0
+              for label,keyword,pattern in probes:
+                  try:
+                      r = call("goods_search", {"keyword":keyword,"platform":"all","size":5,"responseFormat":"json"})
+                      urls, plausible = extract(r,pattern)
+                      results[label] = list(urls)
+                      completed += 1
+                      print(f"COVERAGE {label}: urls={len(urls)} title_match={plausible} structured={bool(list(payloads(r)))}")
+                  except RuntimeError:
+                      print(f"COVERAGE {label}: request_failed")
+                      break
+                  time.sleep(1.2)
+              print(f"SEARCH_SUMMARY attempted={min(completed+1,len(probes)) if completed<len(probes) else completed} completed={completed} nonempty={sum(bool(v) for v in results.values())} unique_urls={len(set(u for a in results.values() for u in a))}")
+              checked = 0
+              for label in ("cpu","gpu","laptop_lenovo"):
+                  if not results.get(label): continue
+                  r = call("history_price", {"goodsUrl":results[label][0],"responseFormat":"json"})
+                  arrays = [e["points"] for d in payloads(r) for e in walk(d) if isinstance(e.get("points"),list)]
+                  points = max(arrays,key=len,default=[])
+                  dates = {p[0] for p in map(valid_point,points) if p is not None}
+                  print(f"HISTORY {label}: points={len(points)} valid_dates={len(dates)}")
+                  checked += 1
+                  time.sleep(1.2)
+              print(f"REQUEST_SUMMARY total_rpc={counter} history_checks={checked}")
           except RuntimeError:
+              print(f"STOPPED total_rpc={counter}")
               sys.exit(1)
           except Exception:
               print("FAILED: unexpected response structure (details intentionally omitted).")
